@@ -157,7 +157,7 @@ anterior completar. Sem marcar, todos progridem em paralelo.
 | **Opcional** | Não bloqueia a conclusão. |
 | **Oculto** | Não aparece no rastreador até ser descoberto. |
 
-O formulário é paginado: se o tipo tiver muitos campos (`escort` tem 23), use
+O formulário é paginado: se o tipo tiver muitos campos (`escort` exibe 27), use
 **Mais campos ▶** e **◀ Campos**.
 
 ### Tabela completa de campos por tipo
