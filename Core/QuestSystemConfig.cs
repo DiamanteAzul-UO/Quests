@@ -117,6 +117,18 @@ namespace Server.Custom.QuestSystem
         /// <summary>Máximo de backups mantidos</summary>
         public int MaxBackups { get; set; } = QuestConstants.DefaultMaxBackups;
 
+        /// <summary>
+        /// Idade (em dias) a partir da qual dados de quest são considerados
+        /// obsoletos e podem ser limpos por QuestManager.CleanupOldData.
+        ///
+        /// Só afeta personagem que NÃO existe mais no mundo e histórico de
+        /// falhas antigo. Quests ativas e completas nunca são removidas — ver
+        /// CleanupOldData para a política exata.
+        ///
+        /// 0 (ou negativo) desliga a limpeza.
+        /// </summary>
+        public int CleanupAfterDays { get; set; } = 90;
+
         #endregion
 
         #region Notifications
@@ -266,6 +278,7 @@ namespace Server.Custom.QuestSystem
                 BackupEnabled = GetBoolValue(root, "BackupEnabled", true);
                 BackupIntervalHours = GetIntValue(root, "BackupIntervalHours", 24);
                 MaxBackups = GetIntValue(root, "MaxBackups", QuestConstants.DefaultMaxBackups);
+                CleanupAfterDays = GetIntValue(root, "CleanupAfterDays", 90);
 
                 // Notifications
                 ShowProgressNotifications = GetBoolValue(root, "ShowProgressNotifications", true);
@@ -339,6 +352,7 @@ namespace Server.Custom.QuestSystem
                 AddElement(doc, persistence, "BackupEnabled", BackupEnabled.ToString().ToLower());
                 AddElement(doc, persistence, "BackupIntervalHours", BackupIntervalHours.ToString());
                 AddElement(doc, persistence, "MaxBackups", MaxBackups.ToString());
+                AddElement(doc, persistence, "CleanupAfterDays", CleanupAfterDays.ToString());
 
                 // Notifications
                 XmlElement notifications = doc.CreateElement("Notifications");
@@ -540,6 +554,7 @@ namespace Server.Custom.QuestSystem
     - Formato: {PersistenceFormat}
     - Auto-Save: {AutoSaveIntervalMinutes} min
     - Backup: {(BackupEnabled ? "ATIVADO" : "DESATIVADO")}
+    - Limpeza de dados obsoletos: {(CleanupAfterDays > 0 ? CleanupAfterDays + " dias" : "DESATIVADA")}
 ═══════════════════════════════════════";
         }
 
