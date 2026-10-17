@@ -1680,13 +1680,35 @@ namespace Server.Gumps
         private static List<ObjectiveFields.Field> BuildFieldList(QuestCreatorObjective objective)
         {
             var list = new List<ObjectiveFields.Field>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // "required" fica junto dos comuns para todos os tipos
-            list.Add(new ObjectiveFields.Field("required", "Quantidade necessaria", ObjectiveFields.INT, "1", ""));
-            list.AddRange(ObjectiveFields.Common);
-            list.AddRange(ObjectiveFields.GetFields(objective.Type));
+            Add(list, seen, new ObjectiveFields.Field("required", "Quantidade necessaria",
+                                                      ObjectiveFields.INT, "1", ""));
+
+            foreach (ObjectiveFields.Field f in ObjectiveFields.Common)
+                Add(list, seen, f);
+
+            // Nove das catorze tabelas de tipo tambem declaram "required" (com
+            // rotulo proprio, ex. "Abates necessarios"). Sem a dedup o formulario
+            // mostrava o campo DUAS vezes, com entry IDs diferentes: o GM
+            // preenchia um, o outro ficava no default e — como OnResponse grava
+            // por chave — o ultimo ganhava, descartando silenciosamente o valor
+            // digitado. A ordem aqui preserva o rotulo comum; o do tipo so entra
+            // se a chave for inedita.
+            foreach (ObjectiveFields.Field f in ObjectiveFields.GetFields(objective.Type))
+                Add(list, seen, f);
 
             return list;
+        }
+
+        private static void Add(List<ObjectiveFields.Field> list, HashSet<string> seen,
+                                ObjectiveFields.Field field)
+        {
+            if (field == null || !seen.Add(field.Key))
+                return;
+
+            list.Add(field);
         }
 
         private static string HintFor(string type)
