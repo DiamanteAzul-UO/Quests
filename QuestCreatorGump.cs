@@ -394,13 +394,28 @@ namespace Server.Gumps
 
             Area(y, "Quests exigidas:", 30, m_Data.RequiredQuestsStr, lW, 44); y += 52;
 
-            Campo(y, "Level minimo:", 31, m_Data.MinLevelStr, lW); y += 32;
-            Campo(y, "Fama minima:", 32, m_Data.MinFameStr, lW); y += 32;
-            Campo(y, "Karma minimo:", 33, m_Data.MinKarmaStr, lW); y += 32;
-            Campo(y, "Karma maximo:", 34, m_Data.MaxKarmaStr, lW); y += 32;
+            // Numerico curto: dois por linha para devolver a altura que o campo
+            // de FailMessage consumiu (senao as listas de skills/itens invadiam
+            // os botoes de Voltar/Avancar).
+            int metade = (GW - 60) / 2;
+
+            CampoEm(25, y, metade, "Level minimo:", 31, m_Data.MinLevelStr, 120);
+            CampoEm(35 + metade, y, metade, "Fama minima:", 32, m_Data.MinFameStr, 120);
+            y += 32;
+
+            CampoEm(25, y, metade, "Karma minimo:", 33, m_Data.MinKarmaStr, 120);
+            CampoEm(35 + metade, y, metade, "Karma maximo:", 34, m_Data.MaxKarmaStr, 120);
+            y += 32;
+
             Campo(y, "Faccao:", 35, m_Data.RequiredFaction, lW); y += 32;
             Campo(y, "Guilda:", 36, m_Data.RequiredGuild, lW); y += 32;
-            Campo(y, "Racas permitidas:", 37, m_Data.AllowedRacesStr, lW); y += 38;
+            Campo(y, "Racas permitidas:", 37, m_Data.AllowedRacesStr, lW); y += 32;
+
+            // FailMessage estava no modelo, era emitido no JSON e recarregado na
+            // edicao, mas nao havia campo para defini-lo ao CRIAR a quest — ou
+            // seja, "todos os pre-requisitos pelo gump" nao era verdade. E justo
+            // esta mensagem que o jogador ve quando nao satisfaz a condicao.
+            Campo(y, "Msg. quando recusado:", 38, m_Data.FailMessage, lW); y += 38;
 
             AddHtml(25, y, GW - 50, 18, Cor(DOURADO, "Skills minimas:"), false, false);
 
@@ -800,6 +815,7 @@ namespace Server.Gumps
                     m_Data.RequiredFaction = GetText(info, 35, m_Data.RequiredFaction);
                     m_Data.RequiredGuild = GetText(info, 36, m_Data.RequiredGuild);
                     m_Data.AllowedRacesStr = GetText(info, 37, m_Data.AllowedRacesStr);
+                    m_Data.FailMessage = GetText(info, 38, m_Data.FailMessage);
                     break;
 
                 case 5:
@@ -939,6 +955,23 @@ namespace Server.Gumps
             {
                 AddTextEntry(30 + labelW, y + 3, GW - labelW - 60, 20, 0, entryId, value ?? "");
             }
+        }
+
+        /// <summary>
+        /// Campo em posição e largura explícitas, para colocar dois campos curtos
+        /// lado a lado na mesma linha.
+        ///
+        /// Existe por causa de altura: o passo 4 ganhou o campo de FailMessage e,
+        /// com tudo em linha própria, sobrava ~1 entrada para as listas de skills
+        /// e itens exigidos — o GM que adicionasse 2 skills via a lista invadir os
+        /// botões. Level/Fama e Karma mín/máx são numéricos curtos e cabem bem
+        /// dois por linha, o que devolve a folga.
+        /// </summary>
+        private void CampoEm(int x, int y, int largura, string label, int entryId, string value, int labelW)
+        {
+            AddHtml(x, y + 3, labelW, 20, Cor(CINZA, label), false, false);
+            AddBackground(x + labelW, y, largura - labelW, 26, 9270);
+            AddTextEntry(x + labelW + 5, y + 3, largura - labelW - 12, 20, 0, entryId, value ?? "");
         }
 
         private void Area(int y, string label, int entryId, string value, int labelW, int height)
