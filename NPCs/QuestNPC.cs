@@ -22,7 +22,7 @@ using Server.Network;
 
 namespace Server.Custom.QuestSystem.NPCs
 {
-    public class QuestNPC : BaseVendor
+    public class QuestNPC : BaseVendor, IQuestNpcIdentity
     {
         #region Constants
 
@@ -75,6 +75,7 @@ namespace Server.Custom.QuestSystem.NPCs
         private NPCBehaviorConfig _behaviorConfig;
         private List<string> _questIds;
         private bool _isQuestGiver;
+        private string _questNpcId;
         private Dictionary<Serial, ConversationState> _conversations;
         private DialogueData _dialogueData;
 
@@ -111,6 +112,22 @@ namespace Server.Custom.QuestSystem.NPCs
             set => _isQuestGiver = value;
         }
 
+        /// <summary>
+        /// Identificador estável do NPC usado pelos JSON de quest
+        /// (ex.: "npc_capita_maelis", "npc_enfermeira_sera").
+        ///
+        /// Correção crítica: sem este campo, os objetivos TalkTo/Deliver e a
+        /// entrega de quest só podiam casar por serial do NPC — que muda a cada
+        /// respawn — ou por nome de exibição exato. Como consequência, quests
+        /// como "Fale com Olin nas Docas" nunca recebiam progresso.
+        /// </summary>
+        [CommandProperty(AccessLevel.GameMaster)]
+        public string QuestNpcId
+        {
+            get => _questNpcId;
+            set => _questNpcId = value;
+        }
+
         [CommandProperty(AccessLevel.GameMaster)]
         public string Bio
         {
@@ -143,7 +160,15 @@ namespace Server.Custom.QuestSystem.NPCs
             set => _dialogueData = value;
         }
 
-        protected override List<SBInfo> SBInfos => new List<SBInfo>();
+        /// <summary>
+        /// QuestNPC não vende nada — mas BaseVendor lê SBInfos a cada interação
+        /// de compra/venda. Devolver "new List<SBInfo>()" alocava uma lista nova
+        /// em CADA acesso (e o comprador iterava sobre ela). O padrão canônico do
+        /// ServUO é uma instância readonly vazia e reutilizada.
+        /// </summary>
+        private readonly List<SBInfo> m_SBInfos = new List<SBInfo>();
+
+        protected override List<SBInfo> SBInfos => m_SBInfos;
 
         #endregion
 
@@ -261,13 +286,74 @@ namespace Server.Custom.QuestSystem.NPCs
             return speech;
         }
 
+        /// <summary>
+        /// Verifica se a fala contém alguma das palavras-chave.
+        ///
+        /// Correção crítica: a versão anterior usava <c>speech.Contains(keyword)</c>,
+        /// que é busca por substring pura. Consequências reais:
+        ///  - "assim" continha "sim"      → o jogador aceitava a quest sem querer;
+        ///  - "não sei" continha "nao"    → recusava sem querer;
+        ///  - "onde fico" continha "fico" → disparava resposta errada.
+        ///
+        /// Agora a comparação é por PALAVRA (ou sequência de palavras), usando os
+        /// tokens da fala. "sim" casa com "sim" e com "sim, aceito", mas não com
+        /// "assim". Palavras compostas ("com certeza", "agora nao") continuam
+        /// funcionando porque são tratadas como sequência de tokens.
+        /// </summary>
         private bool ContainsAny(string speech, string[] keywords)
         {
+            if (string.IsNullOrWhiteSpace(speech) || keywords == null)
+                return false;
+
+            string[] tokens = Tokenize(speech);
+
+            if (tokens.Length == 0)
+                return false;
+
             foreach (string keyword in keywords)
             {
-                if (speech.Contains(keyword))
+                if (string.IsNullOrWhiteSpace(keyword))
+                    continue;
+
+                string[] wanted = Tokenize(NormalizeSpeech(keyword));
+
+                if (wanted.Length == 0)
+                    continue;
+
+                if (ContainsSequence(tokens, wanted))
                     return true;
             }
+
+            return false;
+        }
+
+        private static string[] Tokenize(string text)
+        {
+            return text.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        private static bool ContainsSequence(string[] tokens, string[] wanted)
+        {
+            if (wanted.Length > tokens.Length)
+                return false;
+
+            for (int i = 0; i + wanted.Length <= tokens.Length; i++)
+            {
+                bool ok = true;
+
+                for (int j = 0; j < wanted.Length; j++)
+                {
+                    if (!string.Equals(tokens[i + j], wanted[j], StringComparison.Ordinal))
+                    {
+                        ok = false;
+                        break;
+                    }
+                }
+
+                if (ok)
+                    return true;
+            }
+
             return false;
         }
 
@@ -790,13 +876,19 @@ namespace Server.Custom.QuestSystem.NPCs
 
         private void ProcessQuestDetailResponse(PlayerMobile player, ConversationState state, string speech)
         {
-            if (ContainsAny(speech, ACCEPT_WORDS))
-            {
-                AcceptQuest(player, state);
-            }
-            else if (ContainsAny(speech, DECLINE_WORDS))
+            // RECUSA é testada ANTES da aceitação.
+            //
+            // Antes a ordem era invertida, e como "nao aceito" / "nao quero"
+            // contém tanto uma palavra de recusa quanto uma de aceitação
+            // ("aceito", "quero"), o jogador que dizia NÃO acabava com a quest
+            // aceita. A ordem correta é: negação vence.
+            if (ContainsAny(speech, DECLINE_WORDS))
             {
                 DeclineQuest(player, state);
+            }
+            else if (ContainsAny(speech, ACCEPT_WORDS))
+            {
+                AcceptQuest(player, state);
             }
             else if (ContainsAny(speech, BACK_WORDS) || ContainsAny(speech, QUEST_WORDS))
             {
@@ -914,7 +1006,7 @@ namespace Server.Custom.QuestSystem.NPCs
         /// </summary>
         private void ShowTurnIn_CheckReady(PlayerMobile player, ConversationState state)
         {
-            var readyQuests = player.GetQuestsReadyToTurnIn(this.Serial.ToString());
+            var readyQuests = player.GetQuestsReadyToTurnIn(this);
 
             if (readyQuests.Count == 0)
             {
@@ -922,18 +1014,35 @@ namespace Server.Custom.QuestSystem.NPCs
                 var playerData = QuestManager.Instance.GetPlayerData(player);
                 bool hasActiveDeliver = false;
 
-                foreach (var active in playerData.ActiveQuests)
+                if (playerData != null)
                 {
-                    var def = QuestRepository.Instance.GetQuest(active.QuestId);
-                    if (def == null) continue;
-
-                    foreach (var obj in def.Objectives)
+                    foreach (var active in playerData.ActiveQuests)
                     {
-                        if (obj is DeliverObjective && !active.Progress[def.Objectives.IndexOf(obj)].IsComplete)
+                        if (active == null)
+                            continue;
+
+                        var def = QuestRepository.Instance.GetQuest(active.QuestId);
+                        if (def == null || def.Objectives == null) continue;
+
+                        // Itera por índice: a versão anterior usava
+                        // def.Objectives.IndexOf(obj) para indexar active.Progress,
+                        // o que estourava (ArgumentOutOfRange) em saves cujo
+                        // progresso foi gravado com outra quantidade de objetivos.
+                        for (int i = 0; i < def.Objectives.Count; i++)
                         {
-                            hasActiveDeliver = true;
-                            break;
+                            if (!(def.Objectives[i] is DeliverObjective))
+                                continue;
+
+                            if (i >= active.Progress.Count || active.Progress[i] == null ||
+                                !active.Progress[i].IsComplete)
+                            {
+                                hasActiveDeliver = true;
+                                break;
+                            }
                         }
+
+                        if (hasActiveDeliver)
+                            break;
                     }
                 }
 
@@ -1064,7 +1173,7 @@ namespace Server.Custom.QuestSystem.NPCs
                 // Verifica se tem mais para entregar
                 Timer.DelayCall(TimeSpan.FromMilliseconds(DELAY_LONG), delegate
                 {
-                    var remaining = player.GetQuestsReadyToTurnIn(this.Serial.ToString());
+                    var remaining = player.GetQuestsReadyToTurnIn(this);
                     if (remaining.Count > 0)
                     {
                         SayTo(player, "Voce tem mais alguma missao para entregar?");
@@ -1272,7 +1381,7 @@ namespace Server.Custom.QuestSystem.NPCs
         public override void Serialize(GenericWriter writer)
         {
             base.Serialize(writer);
-            writer.Write(5); // Versão
+            writer.Write(6); // Versão
 
             writer.Write(_isQuestGiver);
             writer.Write(_questIds?.Count ?? 0);
@@ -1290,6 +1399,9 @@ namespace Server.Custom.QuestSystem.NPCs
             writer.Write(BehaviorConfig.FacePlayerOnTalk);
             writer.Write(BehaviorConfig.PlaySoundOnGreet);
             writer.Write(BehaviorConfig.GreetSound);
+
+            // v6: identificador estável do NPC usado pelos JSON de quest
+            writer.Write(_questNpcId ?? "");
         }
 
         public override void Deserialize(GenericReader reader)
@@ -1320,6 +1432,14 @@ namespace Server.Custom.QuestSystem.NPCs
                 BehaviorConfig.FacePlayerOnTalk = reader.ReadBool();
                 BehaviorConfig.PlaySoundOnGreet = reader.ReadBool();
                 BehaviorConfig.GreetSound = reader.ReadInt();
+            }
+
+            if (version >= 6)
+            {
+                _questNpcId = reader.ReadString();
+
+                if (string.IsNullOrWhiteSpace(_questNpcId))
+                    _questNpcId = null;
             }
         }
 

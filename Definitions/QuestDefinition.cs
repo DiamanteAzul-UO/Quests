@@ -220,16 +220,35 @@ namespace Server.Custom.QuestSystem.Quests
         #region Methods
 
         /// <summary>
-        /// Verifica se todos os objetivos estão completos
+        /// Verifica se todos os objetivos obrigatorios estão completos.
+        /// Objetivos marcados como IsOptional NAO impedem a conclusão —
+        /// é exatamente isso que ActiveQuest.CheckCompletion consulta.
         /// </summary>
         public bool AreObjectivesComplete(List<ObjectiveProgress> progress)
         {
-            if (progress == null || progress.Count != Objectives.Count)
+            // Antes, qualquer diferença entre o tamanho de progress e o número de
+            // objetivos fazia a quest nunca poder ser entregue — caso comum quando
+            // o JSON é editado depois que o jogador já aceitou a quest. Agora a
+            // comparação é feita item a item e faltas contam como "não completo",
+            // enquanto sobras são ignoradas.
+            if (progress == null)
+                return Objectives.Count == 0;
+
+            if (Objectives.Count == 0)
                 return false;
 
             for (int i = 0; i < Objectives.Count; i++)
             {
-                if (!Objectives[i].IsOptional && !progress[i].IsComplete)
+                if (Objectives[i] == null)
+                    continue;
+
+                if (Objectives[i].IsOptional)
+                    continue;
+
+                if (i >= progress.Count || progress[i] == null)
+                    return false;
+
+                if (!progress[i].IsComplete)
                     return false;
             }
 
@@ -237,15 +256,23 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Obtém índice do próximo objetivo ativo
+        /// Obtém índice do próximo objetivo OBRIGATÓRIO pendente.
+        /// Objetivos opcionais nunca bloqueiam a fila — antes disso, um
+        /// opcional não feito travava todos os objetivos seguintes para sempre.
         /// </summary>
         public int GetNextObjectiveIndex(List<ObjectiveProgress> progress)
         {
             if (!SequentialObjectives)
                 return -1; // Todos ativos
 
-            for (int i = 0; i < progress.Count; i++)
+            if (progress == null)
+                return -1;
+
+            for (int i = 0; i < Objectives.Count && i < progress.Count; i++)
             {
+                if (Objectives[i].IsOptional)
+                    continue;
+
                 if (!progress[i].IsComplete)
                     return i;
             }
@@ -254,15 +281,37 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Verifica se objetivo está ativo
+        /// Verifica se objetivo está ativo (aceita progresso)
         /// </summary>
         public bool IsObjectiveActive(int index, List<ObjectiveProgress> progress)
         {
             if (index < 0 || index >= Objectives.Count)
                 return false;
 
+            if (progress == null || index >= progress.Count)
+                return false;
+
+            if (progress[index].IsComplete)
+                return false;
+
             if (!SequentialObjectives)
-                return !progress[index].IsComplete;
+                return true;
+
+            // Objetivo opcional: libera assim que todos os obrigatorios
+            // anteriores estiverem prontos.
+            if (Objectives[index].IsOptional)
+            {
+                for (int i = 0; i < index; i++)
+                {
+                    if (Objectives[i].IsOptional)
+                        continue;
+
+                    if (!progress[i].IsComplete)
+                        return false;
+                }
+
+                return true;
+            }
 
             return GetNextObjectiveIndex(progress) == index;
         }
@@ -325,7 +374,9 @@ namespace Server.Custom.QuestSystem.Quests
                     Type = Objectives[i].Type,
                     Current = 0,
                     Required = Objectives[i].Required,
-                    IsComplete = false,
+                    IsComplete = Objectives[i].Required <= 0,
+                    IsOptional = Objectives[i].IsOptional,
+                    IsHidden = Objectives[i].IsHidden,
                     Description = Objectives[i].Description
                 });
             }
@@ -379,10 +430,28 @@ namespace Server.Custom.QuestSystem.Quests
         public bool IsComplete { get; set; }
         public string Description { get; set; }
 
+        /// <summary>
+        /// Objetivo opcional: nao impede a conclusao da quest.
+        /// Copiado da definicao em CreateProgressList e persistido junto do
+        /// progresso para que ActiveQuest.CheckCompletion funcione sem precisar
+        /// consultar o repositorio.
+        /// </summary>
+        public bool IsOptional { get; set; }
+
+        /// <summary>Objetivo oculto ate ser descoberto.</summary>
+        public bool IsHidden { get; set; }
+
         public void AddProgress(int amount = 1)
         {
             Current = Math.Min(Current + amount, Required);
-            IsComplete = Current >= Required;
+            IsComplete = Required <= 0 || Current >= Required;
+        }
+
+        /// <summary>Define o progresso absoluto (usado por objetivos contados por inventario).</summary>
+        public void SetProgress(int value)
+        {
+            Current = Math.Max(0, Math.Min(value, Required));
+            IsComplete = Required <= 0 || Current >= Required;
         }
 
         public string GetProgressText()

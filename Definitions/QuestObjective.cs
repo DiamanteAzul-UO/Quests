@@ -448,8 +448,40 @@ namespace Server.Custom.QuestSystem.Quests
         public int DestinationY { get; set; }
         public int DestinationZ { get; set; }
         public string DestinationMap { get; set; }
+
+        /// <summary>
+        /// Nome da região de destino (ex.: "Britain", "Cove", "Nujel'm").
+        /// Alternativa a destinationX/destinationY: o centro da região é usado.
+        /// </summary>
+        public string DestinationRegion { get; set; }
+
         public int RadiusToComplete { get; set; }
         public string OnEscortDead { get; set; }
+
+        /// <summary>Body do NPC (0x190 = humano masculino, 0x191 = feminino).</summary>
+        public int EscortBody { get; set; }
+
+        /// <summary>Hue do NPC. 0 = aleatório.</summary>
+        public int EscortHue { get; set; }
+
+        /// <summary>Vida do NPC. 0 = padrão (120-150).</summary>
+        public int EscortHits { get; set; }
+
+        /// <summary>Se o NPC revida quando atacado. Padrão false (só segue).</summary>
+        public bool DefendsItself { get; set; }
+
+        /// <summary>
+        /// Teletransporta o NPC até o jogador quando ele fica preso no terreno.
+        /// Padrão true — sem isto, uma porta ou um degrau travava a escolta para
+        /// sempre e a quest ficava impossível de concluir.
+        /// </summary>
+        public bool TeleportWhenStuck { get; set; }
+
+        /// <summary>Distância máxima tolerada entre NPC e jogador antes do resgate.</summary>
+        public int MaxDistanceFromOwner { get; set; }
+
+        /// <summary>Segundos sem avançar antes de considerar o NPC preso.</summary>
+        public int StuckTimeoutSeconds { get; set; }
 
         public EscortObjective()
         {
@@ -457,6 +489,13 @@ namespace Server.Custom.QuestSystem.Quests
             SpawnOnAccept = true;
             RadiusToComplete = 5;
             OnEscortDead = "FailQuest";
+            EscortBody = 0x190;
+            EscortHue = 0;
+            EscortHits = 0;
+            DefendsItself = false;
+            TeleportWhenStuck = true;
+            MaxDistanceFromOwner = 24;
+            StuckTimeoutSeconds = 20;
         }
 
         public override QuestObjective Clone()
@@ -483,8 +522,16 @@ namespace Server.Custom.QuestSystem.Quests
                 DestinationY = this.DestinationY,
                 DestinationZ = this.DestinationZ,
                 DestinationMap = this.DestinationMap,
+                DestinationRegion = this.DestinationRegion,
                 RadiusToComplete = this.RadiusToComplete,
-                OnEscortDead = this.OnEscortDead
+                OnEscortDead = this.OnEscortDead,
+                EscortBody = this.EscortBody,
+                EscortHue = this.EscortHue,
+                EscortHits = this.EscortHits,
+                DefendsItself = this.DefendsItself,
+                TeleportWhenStuck = this.TeleportWhenStuck,
+                MaxDistanceFromOwner = this.MaxDistanceFromOwner,
+                StuckTimeoutSeconds = this.StuckTimeoutSeconds
             };
         }
     }
@@ -749,6 +796,117 @@ namespace Server.Custom.QuestSystem.Quests
                 TargetSerials = new List<Serial>(this.TargetSerials),
                 RespawnOnFail = this.RespawnOnFail
             };
+        }
+    }
+
+    #endregion
+
+    #region UseItem Objective
+
+    /// <summary>
+    /// Objetivo: Usar (duplo clique) um item especifico.
+    /// Alimentado por EventSink.OnItemUse via QuestManager.OnItemUsed.
+    /// </summary>
+    public class UseItemObjective : QuestObjective
+    {
+        /// <summary>Classe C# do item ou tag virtual (ex.: "SeloEmissario").</summary>
+        public string ItemType { get; set; }
+
+        /// <summary>Nome amigavel do item (ex.: "Selo do Emissario").</summary>
+        public string ItemName { get; set; }
+
+        public int ItemHue { get; set; }
+
+        /// <summary>Consome o item ao contar o progresso.</summary>
+        public bool ConsumeOnUse { get; set; }
+
+        public UseItemObjective()
+        {
+            Type = ObjectiveType.UseItem;
+            ConsumeOnUse = false;
+        }
+
+        public override QuestObjective Clone()
+        {
+            return new UseItemObjective
+            {
+                Type = this.Type,
+                Description = this.Description,
+                Required = this.Required,
+                Current = 0,
+                LocationHint = this.LocationHint,
+                Index = this.Index,
+                IsOptional = this.IsOptional,
+                IsHidden = this.IsHidden,
+                ItemType = this.ItemType,
+                ItemName = this.ItemName,
+                ItemHue = this.ItemHue,
+                ConsumeOnUse = this.ConsumeOnUse
+            };
+        }
+
+        public override Dictionary<string, object> ToDictionary()
+        {
+            var dict = base.ToDictionary();
+            dict["itemType"] = ItemType;
+            dict["itemName"] = ItemName;
+            dict["consumeOnUse"] = ConsumeOnUse;
+            return dict;
+        }
+    }
+
+    #endregion
+
+    #region Survive Objective
+
+    /// <summary>
+    /// Objetivo: Sobreviver por um periodo de tempo.
+    /// O progresso e medido em segundos desde o inicio do objetivo e
+    /// avancado por QuestSurviveTimer (veja QuestObjectiveDrivers).
+    /// </summary>
+    public class SurviveObjective : QuestObjective
+    {
+        /// <summary>Segundos que o jogador precisa permanecer vivo.</summary>
+        public int DurationSeconds { get; set; }
+
+        /// <summary>Se verdadeiro, a morte do jogador falha a quest.</summary>
+        public bool FailOnDeath { get; set; }
+
+        /// <summary>Regiao (nome) onde o jogador precisa permanecer. Vazio = qualquer lugar.</summary>
+        public string RequiredRegion { get; set; }
+
+        public SurviveObjective()
+        {
+            Type = ObjectiveType.Survive;
+            DurationSeconds = 60;
+            FailOnDeath = true;
+        }
+
+        public override QuestObjective Clone()
+        {
+            return new SurviveObjective
+            {
+                Type = this.Type,
+                Description = this.Description,
+                Required = this.Required,
+                Current = 0,
+                LocationHint = this.LocationHint,
+                Index = this.Index,
+                IsOptional = this.IsOptional,
+                IsHidden = this.IsHidden,
+                DurationSeconds = this.DurationSeconds,
+                FailOnDeath = this.FailOnDeath,
+                RequiredRegion = this.RequiredRegion
+            };
+        }
+
+        public override Dictionary<string, object> ToDictionary()
+        {
+            var dict = base.ToDictionary();
+            dict["durationSeconds"] = DurationSeconds;
+            dict["failOnDeath"] = FailOnDeath;
+            dict["requiredRegion"] = RequiredRegion;
+            return dict;
         }
     }
 

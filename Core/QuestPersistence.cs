@@ -15,8 +15,25 @@ namespace Server.Custom.QuestSystem
         private static readonly string BackupPath = Path.Combine(
             Core.BaseDirectory, "Saves", "QuestSystem", "QuestData.bak");
 
+        private static bool _initialized;
+
+        /// <summary>
+        /// Registra a persistencia.
+        ///
+        /// Correcao critica: o ServUO invoca por reflexao todo metodo
+        /// "public static void Initialize()" do assembly, e o
+        /// QuestSystemInitializer TAMBEM chama este metodo explicitamente no
+        /// evento WorldLoad. Sem o guard abaixo, "EventSink.WorldSave += OnWorldSave"
+        /// era assinado DUAS vezes: o save era gravado em duplicidade e o
+        /// QuestData.bak virava copia do arquivo recem-gravado (backup inutil).
+        /// </summary>
         public static void Initialize()
         {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+
             EventSink.WorldSave += OnWorldSave;
             Load();
             Console.WriteLine("[QuestPersistence] Sistema de persistencia de quests registrado.");

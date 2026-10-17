@@ -148,6 +148,26 @@ namespace Server.Custom.QuestSystem
 
         #endregion
 
+        #region Item Collection
+
+        /// <summary>
+        /// Quando true, o login troca a mochila do jogador por uma QuestBackpack.
+        ///
+        /// Padrão: false. A coleta de itens hoje é capturada por
+        /// EventSink.OnItemObtained, que funciona com qualquer mochila e ainda
+        /// cobre sub-containers e itens equipados. A troca forçada apagava a
+        /// mochila original do jogador (risco real de perda de itens) e não
+        /// disparava para pilhas que apenas cresciam.
+        /// </summary>
+        public bool UseQuestBackpack { get; set; } = false;
+
+        /// <summary>
+        /// Pasta onde ficam os JSON de quests. Vazio = "<BaseDirectory>/Data/Quests".
+        /// </summary>
+        public string QuestsDataPath { get; set; } = "";
+
+        #endregion
+
         #region Constructor
 
         /// <summary>

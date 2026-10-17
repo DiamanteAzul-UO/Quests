@@ -16,9 +16,14 @@ using Server.Mobiles;
 using Server.Items;
 using Server.Gumps;
 using Server.Commands;
+using Server.Network;
 using Server.Custom.QuestSystem.Dialogue;
-using Server.Custom.QuestSystem.Quests;
-using Server.Engines.Quests;
+
+// Observacao: NAO importar "Server.Engines.Quests". O ServUO ja possui, nesse
+// namespace, tipos com os mesmos nomes usados aqui (QuestObjective,
+// EscortObjective, DeliverObjective, QuestItem, BaseQuest, QuestSystem...).
+// Importa-lo cria ambiguidade (CS0104) e pode fazer o codigo resolver para a
+// classe errada do ServUO em vez da deste sistema.
 
 namespace Server.Custom.QuestSystem.Quests
 {
@@ -57,6 +62,15 @@ namespace Server.Custom.QuestSystem.Quests
         private Dictionary<Serial, PlayerQuestData> _playerData;
         private bool _isInitialized;
 
+        /// <summary>Timer periodico que aplica expiracao e avisos de tempo.</summary>
+        private Timer _timeLimitTimer;
+
+        /// <summary>
+        /// Avisos de tempo ja disparados, por "serial|questId". Fica apenas em
+        /// memoria: nao precisa sobreviver a restart.
+        /// </summary>
+        private readonly Dictionary<string, List<int>> _firedWarnings = new Dictionary<string, List<int>();
+
         #endregion
 
         #region Properties
@@ -87,8 +101,15 @@ namespace Server.Custom.QuestSystem.Quests
         /// <summary>
         /// Inicializa o QuestManager
         /// </summary>
+        private static bool _initialized;
+
         public static void Initialize()
         {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+
             Instance.Init();
             RegisterCommands();
             QuestEventHandler.Initialize();
@@ -99,6 +120,86 @@ namespace Server.Custom.QuestSystem.Quests
         private void Init()
         {
             _isInitialized = true;
+
+            StartTimeLimitTimer();
+        }
+
+        /// <summary>
+        /// Agenda a verificacao periodica de limite de tempo.
+        ///
+        /// Correcao: CheckTimeLimits so era chamado no login e dentro de
+        /// CompleteQuest. Uma quest com prazo de 30 minutos que o jogador
+        /// deixasse correr continuava "ativa" indefinidamente enquanto ele
+        /// estivesse online — e, pior, podia ser entregue depois de expirada.
+        /// </summary>
+        private void StartTimeLimitTimer()
+        {
+            if (_timeLimitTimer != null)
+                return;
+
+            _timeLimitTimer = new TimeLimitTimer(this);
+            _timeLimitTimer.Start();
+
+            Console.WriteLine("[QuestManager] Verificacao periodica de limite de tempo ativa (30s).");
+        }
+
+        /// <summary>Percorre os jogadores online e aplica expiracao/avisos.</summary>
+        public void CheckAllTimeLimits()
+        {
+            // Itera pelas conexoes ativas: PlayerMobile offline nao esta em
+            // World.Mobiles, e _playerData pode guardar dados de quem ja saiu.
+            foreach (NetState state in NetState.Instances)
+            {
+                if (state == null)
+                    continue;
+
+                PlayerMobile player = state.Mobile as PlayerMobile;
+
+                if (player == null || player.Deleted)
+                    continue;
+
+                PlayerQuestData data;
+                if (!_playerData.TryGetValue(player.Serial, out data))
+                    continue;
+
+                if (data == null || data.ActiveQuests.Count == 0)
+                    continue;
+
+                CheckTimeLimits(player);
+            }
+        }
+
+        /// <summary>Limpa os avisos ja disparados de uma quest.</summary>
+        internal void ClearTimeWarnings(PlayerMobile player, string questId)
+        {
+            if (player == null || string.IsNullOrEmpty(questId))
+                return;
+
+            _firedWarnings.Remove(player.Serial.Value + "|" + questId);
+        }
+
+        private class TimeLimitTimer : Timer
+        {
+            private readonly QuestManager _manager;
+
+            public TimeLimitTimer(QuestManager manager)
+                : base(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30))
+            {
+                _manager = manager;
+                Priority = TimerPriority.OneSecond;
+            }
+
+            protected override void OnTick()
+            {
+                try
+                {
+                    _manager.CheckAllTimeLimits();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[QuestManager] Erro no timer de limite de tempo: " + ex.Message);
+                }
+            }
         }
 
         private static void RegisterCommands()
@@ -160,11 +261,141 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Limpa dados de jogadores offline há muito tempo
+        /// Limpa dados obsoletos de jogadores.
+        ///
+        /// Estava como "TODO" vazio, então _playerData crescia para sempre:
+        /// cada personagem deletado deixava uma entrada órfã no dicionário e
+        /// cada falha de quest acumulava um FailedQuest que ninguém nunca lia.
+        ///
+        /// O que é removido (e o que NUNCA é):
+        ///   - entrada inteira cujo personagem não existe mais no mundo E cuja
+        ///     atividade mais recente é anterior a maxAge;
+        ///   - FailedQuest mais antigo que maxAge (histórico de falhas é só
+        ///     cosmético — o retry é permitido independentemente dele);
+        ///   - entradas que ficaram completamente vazias após a poda.
+        ///
+        ///   Nunca toca em ActiveQuest (quest em andamento) nem em
+        ///   CompletedQuest (usado por repeatable/maxCompletions/pré-requisito).
+        ///   Apagar isso corromperia o progresso de quem só ficou offline.
         /// </summary>
-        public void CleanupOldData(TimeSpan maxAge)
+        /// <param name="maxAge">Idade máxima considerada "recente". Zero ou negativo desliga a limpeza.</param>
+        /// <returns>Quantas entradas foram removidas do dicionário.</returns>
+        public int CleanupOldData(TimeSpan maxAge)
         {
-            // TODO: Implementar limpeza de dados antigos
+            if (maxAge <= TimeSpan.Zero || _playerData == null || _playerData.Count == 0)
+                return 0;
+
+            // Durante o load o mundo ainda está incompleto: FindMobile devolveria
+            // null para todo mundo e a limpeza apagaria dados válidos.
+            if (World.Loading)
+                return 0;
+
+            DateTime cutoff = DateTime.UtcNow - maxAge;
+            int removed = 0;
+            int prunedFailures = 0;
+
+            var toRemove = new List<Serial>();
+
+            foreach (var pair in _playerData)
+            {
+                Serial serial = pair.Key;
+                PlayerQuestData data = pair.Value;
+
+                if (data == null)
+                {
+                    toRemove.Add(serial);
+                    continue;
+                }
+
+                Mobile mobile = World.FindMobile(serial);
+                bool characterGone = mobile == null || mobile.Deleted;
+
+                DateTime lastActivity = GetLastActivity(data);
+
+                if (characterGone && lastActivity < cutoff)
+                {
+                    toRemove.Add(serial);
+                    continue;
+                }
+
+                // Poda o histórico de falhas (mantém quests ativas e completas)
+                if (data.FailedQuests != null && data.FailedQuests.Count > 0)
+                {
+                    int before = data.FailedQuests.Count;
+
+                    data.FailedQuests.RemoveAll(f => f != null && f.FailedAt < cutoff);
+                    data.FailedQuests.RemoveAll(f => f == null);
+
+                    prunedFailures += before - data.FailedQuests.Count;
+                }
+
+                // Entrada que ficou totalmente vazia não vale a memória nem o I/O
+                if (IsEmpty(data))
+                    toRemove.Add(serial);
+            }
+
+            for (int i = 0; i < toRemove.Count; i++)
+            {
+                if (_playerData.Remove(toRemove[i]))
+                    removed++;
+            }
+
+            if (removed > 0 || prunedFailures > 0)
+            {
+                Console.WriteLine("[QuestManager] CleanupOldData: " + removed +
+                                  " entrada(s) removida(s), " + prunedFailures +
+                                  " falha(s) antiga(s) podada(s). Restam " + _playerData.Count + ".");
+            }
+
+            return removed;
+        }
+
+        /// <summary>Atividade mais recente entre quests ativas, completas e falhas.</summary>
+        private static DateTime GetLastActivity(PlayerQuestData data)
+        {
+            DateTime latest = DateTime.MinValue;
+
+            if (data.ActiveQuests != null)
+            {
+                foreach (var active in data.ActiveQuests)
+                {
+                    if (active == null)
+                        continue;
+
+                    if (active.LastUpdate > latest) latest = active.LastUpdate;
+                    if (active.AcceptedAt > latest) latest = active.AcceptedAt;
+                }
+            }
+
+            if (data.CompletedQuests != null)
+            {
+                foreach (var completed in data.CompletedQuests)
+                {
+                    if (completed != null && completed.CompletedAt > latest)
+                        latest = completed.CompletedAt;
+                }
+            }
+
+            if (data.FailedQuests != null)
+            {
+                foreach (var failed in data.FailedQuests)
+                {
+                    if (failed != null && failed.FailedAt > latest)
+                        latest = failed.FailedAt;
+                }
+            }
+
+            // Sem nenhuma marca de tempo (dados antigos/migrados): considera
+            // "agora" para não apagar o que não sabemos datar.
+            return latest == DateTime.MinValue ? DateTime.UtcNow : latest;
+        }
+
+        private static bool IsEmpty(PlayerQuestData data)
+        {
+            return (data.ActiveQuests == null || data.ActiveQuests.Count == 0) &&
+                   (data.CompletedQuests == null || data.CompletedQuests.Count == 0) &&
+                   (data.FailedQuests == null || data.FailedQuests.Count == 0) &&
+                   (data.QuestFlags == null || data.QuestFlags.Count == 0);
         }
 
         #endregion
@@ -180,7 +411,25 @@ namespace Server.Custom.QuestSystem.Quests
             if (data == null)
                 return QuestStatus.Available;
 
-            return data.GetQuestStatus(questId);
+            var status = data.GetQuestStatus(questId);
+
+            // Sem isto, QuestStatus.Locked existia no enum mas nunca era usado:
+            // uma quest com pré-requisitos aparecia como "Available" na lista do
+            // NPC para QUALQUER jogador, e só era barrada no momento do aceite.
+            // O requisito é o oposto — a quest não deve nem aparecer (ex.: a do
+            // ladino só existe para quem tem Stealing e Snooping).
+            if (status == QuestStatus.Available && player != null)
+            {
+                var definition = QuestRepository.Instance.GetQuest(questId);
+
+                if (definition != null && definition.Prerequisites != null &&
+                    !definition.Prerequisites.Check(player, out _))
+                {
+                    return QuestStatus.Locked;
+                }
+            }
+
+            return status;
         }
 
         /// <summary>
@@ -286,6 +535,20 @@ namespace Server.Custom.QuestSystem.Quests
             QuestNotificationManager.Instance.NotifyQuestAccepted(player, definition);
             GiveQuestItems(player, definition);
 
+            // Inicia drivers de objetivos que precisam de processo proprio
+            // (escolta, defesa, sobrevivencia). Sem isto esses objetivos
+            // ficavam parados para sempre.
+            QuestObjectiveDrivers.StartForQuest(this, player, definition, activeQuest);
+            ClearTimeWarnings(player, questId);
+
+            // Sincroniza Collect com o que o jogador JA tem no inventario
+            SyncCollectObjectives(player, definition, activeQuest, notify: true);
+
+            // Avalia Explore imediatamente: o jogador pode ter aceitado a
+            // missao ja em pe dentro da area (antes so o evento de movimento
+            // contava, entao quem nao andasse mais nao completava nunca).
+            OnLocationEntered(player, player.Location, player.Map);
+
             // ── MOSTRA O MINI GUMP DE OBJETIVOS ──────────────────────────
             Timer.DelayCall(TimeSpan.FromMilliseconds(500), () =>
             {
@@ -321,12 +584,23 @@ namespace Server.Custom.QuestSystem.Quests
             // Sincroniza itens da mochila antes de validar
             SyncCollectObjectives(player, definition, active);
 
+            // Limite de tempo: uma quest expirada nao pode ser entregue
+            CheckTimeLimits(player);
+            if (!data.HasActiveQuest(questId))
+            {
+                message = "O tempo desta missao expirou.";
+                return false;
+            }
 
             if (active.Status != QuestStatus.ReadyToTurnIn)
             {
-                message = "Voce ainda nao completou todos os objetivos.";
+                message = BuildPendingObjectivesMessage(player, definition, active);
                 return false;
             }
+
+            // Encerra drivers (escolta, defesa, sobrevivencia) ligados a esta quest
+            QuestObjectiveDrivers.StopForQuest(player, questId);
+            ClearTimeWarnings(player, questId);
 
             // Consome itens de coleta se necessário
             ConsumeQuestItems(player, definition, active);
@@ -351,6 +625,47 @@ namespace Server.Custom.QuestSystem.Quests
             message = $"Missao '{definition.Name}' completa!";
             return true;
         }
+
+        /// <summary>
+        /// Monta a mensagem de "o que ainda falta", listando cada objetivo
+        /// pendente com seu progresso. Substitui o antigo texto generico
+        /// "Voce ainda nao completou todos os objetivos", que nao dizia NADA
+        /// e deixava o jogador sem saber por que a missao nao fechava.
+        /// </summary>
+        private string BuildPendingObjectivesMessage(PlayerMobile player, QuestDefinition definition, ActiveQuest active)
+        {
+            var pending = new List<string>();
+
+            for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+            {
+                var progress = active.Progress[i];
+
+                if (progress.IsComplete || progress.IsOptional)
+                    continue;
+
+                string description = string.IsNullOrWhiteSpace(progress.Description)
+                    ? definition.Objectives[i].Description
+                    : progress.Description;
+
+                if (string.IsNullOrWhiteSpace(description))
+                    description = definition.Objectives[i].Type.ToString();
+
+                pending.Add($"{description} ({progress.Current}/{progress.Required})");
+            }
+
+            if (pending.Count == 0)
+                return "Voce ainda nao completou todos os objetivos.";
+
+            if (player != null)
+            {
+                player.SendMessage(QuestConstants.HueWarning, "Ainda falta:");
+
+                foreach (string line in pending)
+                    player.SendMessage(QuestConstants.HueInfo, "  - " + line);
+            }
+
+            return $"Ainda faltam {pending.Count} objetivo(s) para concluir.";
+        }
         /// <summary>
         /// Falha uma quest
         /// </summary>
@@ -368,6 +683,10 @@ namespace Server.Custom.QuestSystem.Quests
             }
 
             var definition = QuestRepository.Instance.GetQuest(questId);
+
+            // Encerra drivers (escolta em campo, ondas de defesa, timers)
+            QuestObjectiveDrivers.StopForQuest(player, questId);
+            ClearTimeWarnings(player, questId);
 
             // Marca como falhada
             data.FailQuest(questId, reason);
@@ -397,9 +716,15 @@ namespace Server.Custom.QuestSystem.Quests
         public void UpdateProgress(PlayerMobile player, string questId, int objectiveIndex, int amount = 1)
         {
             var data = GetPlayerData(player);
+            if (data == null)
+                return;
+
             var active = data.GetActiveQuest(questId);
 
-            if (active == null || active.Status != QuestStatus.Active)
+            // ReadyToTurnIn tambem aceita progresso: objetivos opcionais podem
+            // continuar sendo feitos depois que os obrigatorios terminaram.
+            if (active == null ||
+                (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn))
                 return;
 
             var definition = QuestRepository.Instance.GetQuest(questId);
@@ -409,9 +734,11 @@ namespace Server.Custom.QuestSystem.Quests
             if (!definition.IsObjectiveActive(objectiveIndex, active.Progress))
                 return;
 
+            bool wasReady = active.Status == QuestStatus.ReadyToTurnIn;
+
             bool completed = active.UpdateProgress(objectiveIndex, amount);
 
-            if (objectiveIndex < definition.Objectives.Count)
+            if (objectiveIndex < definition.Objectives.Count && objectiveIndex < active.Progress.Count)
             {
                 var objective = definition.Objectives[objectiveIndex];
                 var progress = active.Progress[objectiveIndex];
@@ -423,7 +750,8 @@ namespace Server.Custom.QuestSystem.Quests
                     QuestNotificationManager.Instance.NotifyObjectiveComplete(player, definition, objective);
             }
 
-            if (active.Status == QuestStatus.ReadyToTurnIn)
+            // So notifica na TRANSICAO para ReadyToTurnIn (antes spamava a cada passo)
+            if (!wasReady && active.Status == QuestStatus.ReadyToTurnIn)
                 QuestNotificationManager.Instance.NotifyQuestReadyToTurnIn(player, definition);
 
             // ── ATUALIZA O MINI GUMP ──────────────────────────────────────
@@ -464,15 +792,185 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Processa evento de kill
+        /// Processa evento de kill.
+        /// Credita objetivos Kill e Destroy (quando o alvo e uma criatura) e
+        /// rola o drop de itens de coleta declarados em FromMobTypes/DropChance.
         /// </summary>
-        public void OnCreatureKilled(PlayerMobile player, Mobile killed)
+        /// <param name="isPartyKill">Credito veio de um membro da party (nao do killer direto).</param>
+        /// <param name="isPetKill">Credito veio de um pet/criatura invocada do jogador.</param>
+        public void OnCreatureKilled(PlayerMobile player, Mobile killed, bool isPartyKill = false, bool isPetKill = false)
+        {
+            if (player == null || player.Deleted || killed == null)
+                return;
+
+            var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
+
+            string killedType = killed.GetType().Name;
+
+            // Gera itens de quest que o mob carrega (CollectObjective.FromMobTypes)
+            RollMobDrops(player, killed, killedType);
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active.Status != QuestStatus.Active)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+                if (definition == null)
+                    continue;
+
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+                {
+                    if (!definition.IsObjectiveActive(i, active.Progress))
+                        continue;
+
+                    var objective = definition.Objectives[i];
+
+                    if (objective is KillObjective killObj)
+                    {
+                        if (isPartyKill && !killObj.CountPartyKills)
+                            continue;
+
+                        if (isPetKill && !killObj.CountPetKills)
+                            continue;
+
+                        if (!MatchesMobile(killObj.TargetType, killObj.TargetTypes, killObj.TargetName, killed, killedType))
+                            continue;
+
+                        if (!RegionMatches(player, killObj.RequiredRegion))
+                            continue;
+
+                        UpdateProgress(player, active.QuestId, i, 1);
+                    }
+                    else if (objective is DestroyObjective destroyObj)
+                    {
+                        // Destroy tambem pode ser uma criatura/estrutura viva
+                        if (!MatchesMobile(destroyObj.TargetType, null, destroyObj.TargetName, killed, killedType))
+                            continue;
+
+                        if (destroyObj.TargetSerials != null && destroyObj.TargetSerials.Count > 0 &&
+                            !destroyObj.TargetSerials.Contains(killed.Serial))
+                            continue;
+
+                        UpdateProgress(player, active.QuestId, i, 1);
+                    }
+                    else if (objective is DefendObjective defendObj)
+                    {
+                        QuestObjectiveDrivers.NotifyDefendKill(this, player, active, definition, i, defendObj, killed, killedType);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Compara uma criatura morta com o alvo declarado no objetivo.
+        /// Aceita: nome da classe C# (exatamente ou como subclasse), lista de
+        /// classes e o nome exibido da criatura (para bosses nomeados).
+        /// </summary>
+        private static bool MatchesMobile(string targetType, List<string> targetTypes, string targetName,
+                                          Mobile killed, string killedType)
+        {
+            bool hasFilter = !string.IsNullOrWhiteSpace(targetType) ||
+                             (targetTypes != null && targetTypes.Count > 0) ||
+                             !string.IsNullOrWhiteSpace(targetName);
+
+            // Sem filtro declarado: qualquer criatura conta (objetivo generico).
+            if (!hasFilter)
+                return killed is BaseCreature;
+
+            if (!string.IsNullOrWhiteSpace(targetType))
+            {
+                if (TargetTypeMatches(killed, killedType, targetType))
+                    return true;
+            }
+
+            if (targetTypes != null)
+            {
+                for (int t = 0; t < targetTypes.Count; t++)
+                {
+                    if (TargetTypeMatches(killed, killedType, targetTypes[t]))
+                        return true;
+                }
+            }
+
+            // Nome exibido da criatura — cobre casos como targetType "Esqueleto"
+            // onde o GM escreveu o nome em portugues e nao a classe "Skeleton".
+            if (!string.IsNullOrWhiteSpace(killed.Name))
+            {
+                string normalizedName = QuestItemMatcher.Normalize(killed.Name);
+
+                if (!string.IsNullOrWhiteSpace(targetType) &&
+                    normalizedName.Contains(QuestItemMatcher.Normalize(targetType)))
+                    return true;
+
+                if (!string.IsNullOrWhiteSpace(targetName) &&
+                    normalizedName.Contains(QuestItemMatcher.Normalize(targetName)))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool TargetTypeMatches(Mobile killed, string killedType, string spec)
+        {
+            if (string.IsNullOrWhiteSpace(spec))
+                return false;
+
+            if (killedType.Equals(spec, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // ResolveAnyType (e nao ResolveType): ResolveType descarta tudo que
+            // nao for Item, entao devolvia null para qualquer criatura e o match
+            // por heranca nunca acontecia — so o nome exato da classe funcionava.
+            Type real = QuestItemMatcher.ResolveAnyType(spec);
+            if (real != null && real.IsInstanceOfType(killed))
+                return true;
+
+            return QuestItemMatcher.Normalize(killed.Name ?? string.Empty)
+                       .Contains(QuestItemMatcher.Normalize(spec));
+        }
+
+        /// <summary>
+        /// Verifica se o jogador esta na regiao exigida pelo objetivo.
+        /// Aceita o nome exato da regiao ou qualquer regiao pai (IsPartOf).
+        /// </summary>
+        private static bool RegionMatches(PlayerMobile player, string regionName)
+        {
+            if (string.IsNullOrWhiteSpace(regionName))
+                return true;
+
+            if (player == null || player.Region == null)
+                return false;
+
+            if (player.Region.Name != null &&
+                player.Region.Name.Equals(regionName, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            try
+            {
+                return player.Region.IsPartOf(regionName);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Rola o drop de itens de quest definidos em CollectObjective.FromMobTypes.
+        /// Sem isso, objetivos do tipo "colete N itens do mob X" eram impossiveis:
+        /// DropChance e FromMobTypes existiam na definicao mas nunca eram usados.
+        /// </summary>
+        private void RollMobDrops(PlayerMobile player, Mobile killed, string killedType)
         {
             if (player == null || killed == null)
                 return;
 
             var data = GetPlayerData(player);
-            string killedType = killed.GetType().Name;
+            if (data == null)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
@@ -483,118 +981,390 @@ namespace Server.Custom.QuestSystem.Quests
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is KillObjective killObj))
+                    var collect = definition.Objectives[i] as CollectObjective;
+                    if (collect == null)
                         continue;
 
                     if (active.Progress[i].IsComplete)
                         continue;
 
-                    // Verifica se é o tipo correto
-                    bool matches = false;
+                    if (collect.FromMobTypes == null || collect.FromMobTypes.Count == 0)
+                        continue;
 
-                    if (!string.IsNullOrEmpty(killObj.TargetType))
+                    bool fromThisMob = false;
+                    for (int m = 0; m < collect.FromMobTypes.Count; m++)
                     {
-                        matches = killedType.Equals(killObj.TargetType, StringComparison.OrdinalIgnoreCase);
-                    }
-
-                    if (!matches && killObj.TargetTypes != null && killObj.TargetTypes.Count > 0)
-                    {
-                        matches = killObj.TargetTypes.Any(t =>
-                            killedType.Equals(t, StringComparison.OrdinalIgnoreCase));
-                    }
-
-                    if (matches)
-                    {
-                        // Verifica região se necessário
-                        if (!string.IsNullOrEmpty(killObj.RequiredRegion))
+                        if (TargetTypeMatches(killed, killedType, collect.FromMobTypes[m]))
                         {
-                            if (player.Region == null ||
-                                !player.Region.Name.Equals(killObj.RequiredRegion, StringComparison.OrdinalIgnoreCase))
-                                continue;
+                            fromThisMob = true;
+                            break;
                         }
-
-                        UpdateProgress(player, active.QuestId, i, 1);
                     }
+
+                    if (!fromThisMob)
+                        continue;
+
+                    int chance = collect.DropChance <= 0 ? 100 : Math.Min(100, collect.DropChance);
+                    if (chance < 100 && Utility.Random(100) >= chance)
+                        continue;
+
+                    int needed = collect.Required - active.Progress[i].Current;
+                    if (needed <= 0)
+                        continue;
+
+                    Item drop = QuestItemMatcher.Create(collect.ItemType, collect.ItemName, collect.ItemHue, 1);
+                    if (drop == null)
+                        continue;
+
+                    Container corpse = killed.Corpse;
+                    if (corpse != null && !corpse.Deleted)
+                        corpse.DropItem(drop);
+                    else
+                        drop.MoveToWorld(killed.Location, killed.Map);
+
+                    Console.WriteLine("[QuestManager] Drop de quest gerado: " + collect.ItemType +
+                                      " de " + killedType + " para " + player.Name);
                 }
             }
         }
 
         /// <summary>
-        /// Processa coleta de item
+        /// Processa obtencao de item (EventSink.OnItemObtained / QuestBackpack).
+        /// Objetivos Collect sao medidos pelo inventario real do jogador, entao
+        /// empilhar, guardar em sub-container ou comprar tambem conta.
         /// </summary>
         public void OnItemCollected(PlayerMobile player, Item item)
         {
-            if (player == null || item == null)
+            if (player == null || player.Deleted)
                 return;
 
             var data = GetPlayerData(player);
-            string itemType = item.GetType().Name;
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                bool changed = SyncCollectObjectives(player, definition, active, notify: true);
+
+                if (changed)
+                    AtualizarMiniGump(player, active.QuestId);
+            }
+        }
+
+        /// <summary>
+        /// Processa entrada em regiao (EventSink.OnEnterRegion).
+        /// Cobre Explore por nome de regiao e por coordenadas apos teleporte.
+        /// </summary>
+        public void OnRegionEntered(PlayerMobile player, Region oldRegion, Region newRegion)
+        {
+            if (player == null || player.Deleted)
+                return;
+
+            EvaluateExploreObjectives(player, player.Location, player.Map, newRegion);
+        }
+
+        /// <summary>
+        /// Processa entrada em local (movimento, teleporte, login).
+        /// </summary>
+        public void OnLocationEntered(PlayerMobile player, Point3D location, Map map)
+        {
+            if (player == null || player.Deleted)
+                return;
+
+            EvaluateExploreObjectives(player, location, map, player.Region);
+        }
+
+        /// <summary>
+        /// Avalia todos os objetivos Explore ativos do jogador contra uma posicao.
+        /// </summary>
+        /// <remarks>
+        /// Correcoes aplicadas aqui:
+        ///  - usa a posicao INFORMADA (o evento Movement do ServUO dispara ANTES
+        ///    de o Mobile mudar de tile, entao player.Location ainda era o tile antigo);
+        ///  - e chamado tambem por teleporte, entrada de regiao e login, entao
+        ///    chegar de moongate/recall agora conclui o objetivo;
+        ///  - progresso e setado para o valor cheio de uma vez (antes somava +1
+        ///    a cada passo e podia estourar o Required ou nunca disparar).
+        /// </remarks>
+        private void EvaluateExploreObjectives(PlayerMobile player, Point3D location, Map map, Region region)
+        {
+            var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+                if (definition == null)
+                    continue;
+
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is CollectObjective collectObj))
+                    var explore = definition.Objectives[i] as ExploreObjective;
+                    if (explore == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
+                    if (!definition.IsObjectiveActive(i, active.Progress))
                         continue;
 
-                    // Verifica tipo
-                    if (!itemType.Equals(collectObj.ItemType, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    // Verifica hue se necessário
-                    if (collectObj.ItemHue > 0 && item.Hue != collectObj.ItemHue)
-                        continue;
-
-                    // Conta itens na mochila
-                    int count = CountItemsInPack(player, collectObj.ItemType, collectObj.ItemHue);
-                    int needed = collectObj.Required - active.Progress[i].Current;
-
-                    if (count >= needed)
+                    if (!IsInsideExploreArea(player, explore, location, map, region))
                     {
-                        // Completa objetivo
-                        int toAdd = needed;
-                        UpdateProgress(player, active.QuestId, i, toAdd);
+                        // Saiu da area antes de cumprir o tempo de permanencia
+                        QuestObjectiveDrivers.CancelStay(player, active.QuestId, i);
+                        continue;
                     }
-                    else if (count > 0)
-                    {
-                        // Progresso parcial - recalcula baseado no total
-                        active.Progress[i].Current = Math.Min(count, collectObj.Required);
-                        active.Progress[i].IsComplete = active.Progress[i].Current >= collectObj.Required;
-                        active.CheckCompletion();
 
-                        QuestNotificationManager.Instance.NotifyObjectiveProgress(
-                            player,
-                            definition,
-                            collectObj,
-                            active.Progress[i].Current,
-                            collectObj.Required
-                        );
+                    if (explore.StayDurationSeconds > 0)
+                    {
+                        QuestObjectiveDrivers.BeginStay(this, player, active.QuestId, i, explore.StayDurationSeconds);
+                        continue;
                     }
+
+                    int needed = explore.Required - active.Progress[i].Current;
+                    if (needed > 0)
+                        UpdateProgress(player, active.QuestId, i, needed);
                 }
             }
         }
 
         /// <summary>
-        /// Processa entrada em região/local
+        /// True quando o jogador esta dentro da area do objetivo Explore.
+        /// Suporta coordenadas+raio e/ou nome de regiao.
         /// </summary>
-        public void OnLocationEntered(PlayerMobile player, Point3D location, Map map)
+        private static bool IsInsideExploreArea(PlayerMobile player, ExploreObjective explore,
+                                                Point3D location, Map map, Region region)
+        {
+            bool hasCoords = explore.LocationX != 0 || explore.LocationY != 0;
+            bool hasRegion = !string.IsNullOrWhiteSpace(explore.LocationName);
+
+            // Nada configurado: objetivo invalido (reportado pelo [questvalidate)
+            if (!hasCoords && !hasRegion)
+                return false;
+
+            if (hasCoords)
+            {
+                Map targetMap = explore.GetMap();
+
+                if (map != null && targetMap != null && map != targetMap)
+                    return false;
+
+                int radius = explore.RadiusTiles > 0 ? explore.RadiusTiles : 1;
+
+                if (player != null)
+                {
+                    if (!player.InRange(new Point2D(explore.LocationX, explore.LocationY), radius))
+                        return false;
+                }
+                else
+                {
+                    int dx = location.X - explore.LocationX;
+                    int dy = location.Y - explore.LocationY;
+
+                    if (dx * dx + dy * dy > radius * radius)
+                        return false;
+                }
+
+                // Se so ha coordenadas, ja passou
+                if (!hasRegion)
+                    return true;
+            }
+
+            if (hasRegion)
+            {
+                Region check = region ?? (player != null ? player.Region : null);
+
+                if (check == null)
+                    return false;
+
+                if (check.Name != null && check.Name.Equals(explore.LocationName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                try
+                {
+                    if (check.IsPartOf(explore.LocationName))
+                        return true;
+                }
+                catch
+                {
+                    // nome de regiao inexistente
+                }
+
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// True quando o jogador tem algum objetivo Explore pendente.
+        /// Usado para decidir se vale a pena reagir a eventos de movimento.
+        /// </summary>
+        public bool HasPendingExploreObjective(PlayerMobile player)
+        {
+            var data = GetPlayerData(player);
+            if (data == null)
+                return false;
+
+            foreach (var active in data.ActiveQuests)
+            {
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+                if (definition == null)
+                    continue;
+
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+                {
+                    if (definition.Objectives[i] is ExploreObjective && definition.IsObjectiveActive(i, active.Progress))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Processa uso de item (EventSink.OnItemUse) — objetivos UseItem.
+        /// </summary>
+        public void OnItemUsed(PlayerMobile player, Item item)
+        {
+            if (player == null || player.Deleted || item == null || item.Deleted)
+                return;
+
+            var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+                if (definition == null)
+                    continue;
+
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+                {
+                    var useObj = definition.Objectives[i] as UseItemObjective;
+                    if (useObj == null)
+                        continue;
+
+                    if (!definition.IsObjectiveActive(i, active.Progress))
+                        continue;
+
+                    if (!QuestItemMatcher.Matches(item, useObj.ItemType, useObj.ItemName, useObj.ItemHue))
+                        continue;
+
+                    UpdateProgress(player, active.QuestId, i, 1);
+
+                    if (useObj.ConsumeOnUse)
+                        QuestItemMatcher.Consume(player, useObj.ItemType, useObj.ItemName, useObj.ItemHue, 1);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Processa destruicao de um objeto do mundo — objetivos Destroy.
+        /// Pode ser chamado por itens custom (OnDoubleClick/OnDelete) ou pelo
+        /// evento de morte quando o alvo e uma criatura.
+        /// </summary>
+        public void OnObjectDestroyed(PlayerMobile player, object target)
+        {
+            if (player == null || player.Deleted || target == null)
+                return;
+
+            var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
+
+            Item targetItem = target as Item;
+            Mobile targetMobile = target as Mobile;
+
+            string targetType = target.GetType().Name;
+            string targetName = targetItem != null ? targetItem.Name : (targetMobile != null ? targetMobile.Name : null);
+            Serial targetSerial = targetItem != null ? targetItem.Serial
+                                : (targetMobile != null ? targetMobile.Serial : Serial.MinusOne);
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+                if (definition == null)
+                    continue;
+
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+                {
+                    var destroyObj = definition.Objectives[i] as DestroyObjective;
+                    if (destroyObj == null)
+                        continue;
+
+                    if (!definition.IsObjectiveActive(i, active.Progress))
+                        continue;
+
+                    bool matches = false;
+
+                    if (!string.IsNullOrWhiteSpace(destroyObj.TargetType))
+                    {
+                        // ResolveAnyType: o alvo de Destroy pode ser criatura OU
+                        // estrutura; ResolveType descartava tudo que nao era Item.
+                        Type real = QuestItemMatcher.ResolveAnyType(destroyObj.TargetType);
+
+                        if (real != null && real.IsInstanceOfType(target))
+                            matches = true;
+                        else if (targetType.Equals(destroyObj.TargetType, StringComparison.OrdinalIgnoreCase))
+                            matches = true;
+                        else if (targetItem != null &&
+                                 QuestItemMatcher.Matches(targetItem, destroyObj.TargetType, destroyObj.TargetName,
+                                                          0, true))
+                            matches = true;
+                    }
+
+                    if (!matches && !string.IsNullOrWhiteSpace(destroyObj.TargetName) && !string.IsNullOrWhiteSpace(targetName))
+                        matches = QuestItemMatcher.Normalize(targetName).Contains(QuestItemMatcher.Normalize(destroyObj.TargetName));
+
+                    if (!matches && !string.IsNullOrWhiteSpace(destroyObj.TargetType) && !string.IsNullOrWhiteSpace(targetName))
+                        matches = QuestItemMatcher.Normalize(targetName).Contains(QuestItemMatcher.Normalize(destroyObj.TargetType));
+
+                    if (!matches)
+                        continue;
+
+                    if (destroyObj.TargetSerials != null && destroyObj.TargetSerials.Count > 0 &&
+                        !destroyObj.TargetSerials.Contains(targetSerial))
+                        continue;
+
+                    UpdateProgress(player, active.QuestId, i, 1);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Processa a morte do jogador — objetivos Survive com FailOnDeath
+        /// e quests configuradas para falhar na morte.
+        /// </summary>
+        public void OnPlayerDied(PlayerMobile player)
         {
             if (player == null)
                 return;
 
             var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
@@ -605,172 +1375,353 @@ namespace Server.Custom.QuestSystem.Quests
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is ExploreObjective exploreObj))
+                    var survive = definition.Objectives[i] as SurviveObjective;
+                    if (survive == null || !survive.FailOnDeath)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
-                        continue;
+                    QuestObjectiveDrivers.CancelStay(player, active.QuestId, i);
 
-                    // Verifica mapa
-                    Map targetMap = exploreObj.GetMap();
-                    if (map != targetMap)
-                        continue;
-
-                    // Verifica distância
-                    Point3D targetLoc = exploreObj.GetLocation();
-                    double distance = player.GetDistanceToSqrt(targetLoc);
-
-                    if (distance <= exploreObj.RadiusTiles)
-                    {
-                        UpdateProgress(player, active.QuestId, i, 1);
-                    }
+                    string message;
+                    FailQuest(player, active.QuestId, QuestFailReason.PlayerDied, out message);
+                    break;
                 }
             }
         }
 
         /// <summary>
-        /// Processa fala com NPC
+        /// Verifica e aplica expiracao de quests com limite de tempo.
+        /// Antes desta rotina ExpiresAt/IsExpired/OnTimeExpire existiam mas
+        /// nada nunca os consultava: quests com tempo limite nunca expiravam.
         /// </summary>
-        public void OnTalkToNpc(PlayerMobile player, Mobile npc, string npcId)
+        public void CheckTimeLimits(PlayerMobile player)
         {
-            if (player == null || npc == null)
-                return;
-
             var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status == QuestStatus.Completed || active.Status == QuestStatus.Failed)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+
+                if (!active.IsExpired)
+                {
+                    NotifyTimeWarnings(player, active, definition);
+                    continue;
+                }
+
+                string onExpire = definition != null && !string.IsNullOrWhiteSpace(definition.OnTimeExpire)
+                    ? definition.OnTimeExpire
+                    : "Fail";
+
+                if (onExpire.Equals("Nothing", StringComparison.OrdinalIgnoreCase) ||
+                    onExpire.Equals("Ignore", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (onExpire.Equals("Reset", StringComparison.OrdinalIgnoreCase) ||
+                    onExpire.Equals("ResetQuest", StringComparison.OrdinalIgnoreCase))
+                {
+                    ResetQuestProgress(player, active.QuestId);
+                    continue;
+                }
+
+                string message;
+                FailQuest(player, active.QuestId, QuestFailReason.TimeExpired, out message);
+            }
+        }
+
+        /// <summary>
+        /// Emite os avisos de tempo restante declarados em "timeLimit.warnings".
+        /// Cada marco (em minutos) é avisado uma única vez por quest.
+        /// </summary>
+        private void NotifyTimeWarnings(PlayerMobile player, ActiveQuest active, QuestDefinition definition)
+        {
+            if (player == null || active == null || definition == null)
+                return;
+
+            if (!definition.HasTimeLimit || !active.ExpiresAt.HasValue)
+                return;
+
+            if (definition.TimeWarnings == null || definition.TimeWarnings.Count == 0)
+                return;
+
+            TimeSpan remaining = active.ExpiresAt.Value - DateTime.UtcNow;
+
+            if (remaining <= TimeSpan.Zero)
+                return;
+
+            int minutesLeft = (int)Math.Ceiling(remaining.TotalMinutes);
+            string key = player.Serial.Value + "|" + active.QuestId;
+
+            List<int> fired;
+            if (!_firedWarnings.TryGetValue(key, out fired))
+            {
+                fired = new List<int>();
+                _firedWarnings[key] = fired;
+            }
+
+            foreach (int mark in definition.TimeWarnings)
+            {
+                if (mark <= 0 || fired.Contains(mark))
+                    continue;
+
+                if (minutesLeft > mark)
+                    continue;
+
+                fired.Add(mark);
+
+                QuestNotificationManager.Instance.NotifyTimeWarning(player, definition, minutesLeft);
+                break;
+            }
+        }
+
+        /// <summary>
+        /// Zera o progresso de uma quest ativa mantendo-a na lista.
+        /// </summary>
+        public void ResetQuestProgress(PlayerMobile player, string questId)
+        {
+            var data = GetPlayerData(player);
+            if (data == null)
+                return;
+
+            var active = data.GetActiveQuest(questId);
+            if (active == null)
+                return;
+
+            var definition = QuestRepository.Instance.GetQuest(questId);
+
+            foreach (var progress in active.Progress)
+            {
+                progress.Current = 0;
+                progress.IsComplete = progress.Required <= 0;
+            }
+
+            active.Status = QuestStatus.Active;
+            active.AcceptedAt = DateTime.UtcNow;
+
+            if (definition != null && definition.HasTimeLimit)
+                active.ExpiresAt = DateTime.UtcNow.AddMinutes(definition.TimeLimitMinutes);
+
+            if (player != null)
+                player.SendMessage(QuestConstants.HueWarning, "A missao '{0}' reiniciou.", active.QuestName);
+        }
+
+        /// <summary>
+        /// Processa fala/interacao com NPC — objetivos TalkTo.
+        /// </summary>
+        /// <remarks>
+        /// Correcoes:
+        ///  - o NPC agora e identificado por uma lista de IDs (id configurado,
+        ///    serial e nome normalizado). Antes só chegava aqui o Serial.ToString(),
+        ///    então "targetNpcId": "npc_enfermeira_sera" nunca casava;
+        ///  - grantItems usa GiveItemsToPlayer, que cria um QuestItem com tag
+        ///    quando a classe nao existe. Antes o item era simplesmente descartado
+        ///    ("tipo nao encontrado") e o Collect dependente ficava impossivel.
+        /// </remarks>
+        public void OnTalkToNpc(PlayerMobile player, Mobile npc, string npcId)
+        {
+            if (player == null || player.Deleted || npc == null)
+                return;
+
+            var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
+
+            List<string> npcIdentifiers = GetNpcIdentifiers(npc, npcId);
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                bool changed = false;
+
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is TalkToObjective talkObj))
+                    var talkObj = definition.Objectives[i] as TalkToObjective;
+                    if (talkObj == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
+                    if (!definition.IsObjectiveActive(i, active.Progress))
                         continue;
 
-                    bool matches = false;
-
-                    if (!string.IsNullOrEmpty(talkObj.TargetNpcId) &&
-                        talkObj.TargetNpcId.Equals(npcId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        matches = true;
-                    }
-
-                    if (!matches && !string.IsNullOrEmpty(talkObj.TargetNpcName) &&
-                        npc.Name != null &&
-                        npc.Name.IndexOf(talkObj.TargetNpcName, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        matches = true;
-                    }
-
-                    if (!matches)
+                    if (!MatchesNpc(talkObj.TargetNpcId, talkObj.TargetNpcName, npc, npcIdentifiers))
                         continue;
 
                     UpdateProgress(player, active.QuestId, i, 1);
+                    changed = true;
 
-                    // Entrega itens e sincroniza objetivos Collect correspondentes
+                    // Entrega os itens prometidos por este objetivo
                     if (active.Progress[i].IsComplete && talkObj.GrantItems != null && talkObj.GrantItems.Count > 0)
-                    {
-                        foreach (var grant in talkObj.GrantItems)
-                        {
-                            // Cria e entrega o item
-                            var itemType = ScriptCompiler.FindTypeByName(grant.ItemType);
-                            if (itemType == null)
-                            {
-                                Console.WriteLine($"[QuestManager] GrantItem: tipo '{grant.ItemType}' não encontrado.");
-                                continue;
-                            }
+                        GiveItemsToPlayer(player, npc, talkObj.GrantItems);
+                }
 
-                            var item = Activator.CreateInstance(itemType) as Item;
-                            if (item == null)
-                                continue;
-
-                            player.AddToBackpack(item);
-                            player.SendMessage(54, $"Você recebeu: {grant.ItemName}.");
-
-                            // Atualiza objetivos Collect que esperam este mesmo ItemType
-                            for (int j = 0; j < definition.Objectives.Count; j++)
-                            {
-                                if (!(definition.Objectives[j] is CollectObjective collectObj))
-                                    continue;
-
-                                if (active.Progress[j].IsComplete)
-                                    continue;
-
-                                if (!string.Equals(collectObj.ItemType, grant.ItemType, StringComparison.OrdinalIgnoreCase))
-                                    continue;
-
-                                int needed = collectObj.Required - active.Progress[j].Current;
-                                int toAdd = Math.Min(grant.Amount, needed);
-
-                                if (toAdd > 0)
-                                    UpdateProgress(player, active.QuestId, j, toAdd);
-                            }
-                        }
-                    }
+                if (changed)
+                {
+                    // Re-sincroniza Collect (as cartas acabaram de entrar na mochila)
+                    SyncCollectObjectives(player, definition, active, notify: true);
+                    AtualizarMiniGump(player, active.QuestId);
                 }
             }
+        }
+
+        /// <summary>
+        /// Monta a lista de identificadores possiveis para um NPC:
+        /// id declarado (IQuestNpcIdentity), serial e nome normalizado.
+        /// </summary>
+        internal static List<string> GetNpcIdentifiers(Mobile npc, string npcId)
+        {
+            var ids = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(npcId))
+                ids.Add(npcId);
+
+            if (npc == null)
+                return ids;
+
+            IQuestNpcIdentity identity = npc as IQuestNpcIdentity;
+            if (identity != null && !string.IsNullOrWhiteSpace(identity.QuestNpcId))
+                ids.Add(identity.QuestNpcId);
+
+            string serialText = npc.Serial.ToString();
+            if (!ids.Contains(serialText))
+                ids.Add(serialText);
+
+            string hexText = "0x" + npc.Serial.Value.ToString("X");
+            if (!ids.Contains(hexText))
+                ids.Add(hexText);
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Verifica se um NPC satisfaz o alvo declarado num objetivo TalkTo/Deliver.
+        /// </summary>
+        internal static bool MatchesNpc(string targetNpcId, string targetNpcName, Mobile npc, List<string> npcIdentifiers)
+        {
+            if (npc == null)
+                return false;
+
+            bool hasIdFilter = !string.IsNullOrWhiteSpace(targetNpcId);
+            bool hasNameFilter = !string.IsNullOrWhiteSpace(targetNpcName);
+
+            if (!hasIdFilter && !hasNameFilter)
+                return false;   // objetivo sem alvo declarado => invalido (ver [questvalidate)
+
+            if (hasIdFilter && npcIdentifiers != null)
+            {
+                string wanted = QuestItemMatcher.Normalize(targetNpcId);
+
+                for (int i = 0; i < npcIdentifiers.Count; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(npcIdentifiers[i]))
+                        continue;
+
+                    string have = QuestItemMatcher.Normalize(npcIdentifiers[i]);
+
+                    if (have == wanted || have.Contains(wanted) || wanted.Contains(have))
+                        return true;
+                }
+            }
+
+            if (hasNameFilter && !string.IsNullOrWhiteSpace(npc.Name))
+            {
+                string normalizedName = QuestItemMatcher.Normalize(npc.Name);
+                string wantedName = QuestItemMatcher.Normalize(targetNpcName);
+
+                if (normalizedName == wantedName || normalizedName.Contains(wantedName))
+                    return true;
+            }
+
+            // Ultimo recurso: a classe C# do NPC (ex.: "QuestNPC" subclasses nomeadas)
+            if (hasIdFilter &&
+                QuestItemMatcher.Normalize(npc.GetType().Name).Contains(QuestItemMatcher.Normalize(targetNpcId)))
+                return true;
+
+            return false;
         }
 
         /// <summary>
         /// Processa interação com item/objeto (DoubleClick, Speech, etc)
         /// </summary>
-        public void OnInteract(PlayerMobile player, object target, string interactionType = "DoubleClick")
+        public void OnInteract(PlayerMobile player, object target, string interactionType = "DoubleClick", string speech = null)
         {
-            if (player == null || target == null)
+            if (player == null || player.Deleted || target == null)
                 return;
 
             var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
+
             string targetTypeName = target.GetType().Name;
 
             Item targetItem = target as Item;
             Mobile targetMobile = target as Mobile;
+            string targetDisplayName = targetItem != null ? targetItem.Name : (targetMobile != null ? targetMobile.Name : null);
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is InteractObjective interactObj))
+                    var interactObj = definition.Objectives[i] as InteractObjective;
+                    if (interactObj == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
+                    if (!definition.IsObjectiveActive(i, active.Progress))
                         continue;
 
                     // Verifica tipo de interação (DoubleClick, Speech, etc)
-                    if (!string.IsNullOrEmpty(interactObj.InteractionType) &&
+                    if (!string.IsNullOrWhiteSpace(interactObj.InteractionType) &&
                         !interactObj.InteractionType.Equals(interactionType, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    bool matches = false;
-
-                    // Verifica pelo nome do tipo (ex: "MarcasEscavacao")
-                    if (!string.IsNullOrEmpty(interactObj.TargetType) &&
-                        targetTypeName.Equals(interactObj.TargetType, StringComparison.OrdinalIgnoreCase))
+                    // Se exige uma palavra falada, confere
+                    if (!string.IsNullOrWhiteSpace(interactObj.SpeechTrigger))
                     {
-                        matches = true;
+                        if (string.IsNullOrWhiteSpace(speech))
+                            continue;
+
+                        if (!QuestItemMatcher.Normalize(speech).Contains(QuestItemMatcher.Normalize(interactObj.SpeechTrigger)))
+                            continue;
                     }
 
-                    // Verifica pelo nome do objeto, se definido
-                    if (!matches && !string.IsNullOrEmpty(interactObj.TargetName))
+                    bool matches = false;
+
+                    // Pela classe C# do alvo (ex: "MarcasEscavacao"), aceitando subclasses
+                    if (!string.IsNullOrWhiteSpace(interactObj.TargetType))
                     {
-                        string name = targetItem?.Name ?? targetMobile?.Name;
-                        if (name != null && name.IndexOf(interactObj.TargetName, StringComparison.OrdinalIgnoreCase) >= 0)
+                        // ResolveAnyType: o alvo de Interact pode ser criatura ou
+                        // objeto; ResolveType descartava tudo que nao era Item.
+                        Type real = QuestItemMatcher.ResolveAnyType(interactObj.TargetType);
+
+                        if (real != null && real.IsInstanceOfType(target))
+                            matches = true;
+                        else if (targetTypeName.Equals(interactObj.TargetType, StringComparison.OrdinalIgnoreCase))
+                            matches = true;
+                        else if (targetItem != null &&
+                                 QuestItemMatcher.Matches(targetItem, interactObj.TargetType, interactObj.TargetName))
+                            matches = true;
+                    }
+
+                    // Pelo nome do objeto, se definido
+                    if (!matches && !string.IsNullOrWhiteSpace(interactObj.TargetName) && !string.IsNullOrWhiteSpace(targetDisplayName))
+                    {
+                        if (QuestItemMatcher.Normalize(targetDisplayName).Contains(QuestItemMatcher.Normalize(interactObj.TargetName)))
                             matches = true;
                     }
 
@@ -780,7 +1731,9 @@ namespace Server.Custom.QuestSystem.Quests
                     // Se a quest exige um objeto específico (por serial), valida
                     if (interactObj.TargetSerials != null && interactObj.TargetSerials.Count > 0)
                     {
-                        Serial serial = targetItem?.Serial ?? targetMobile?.Serial ?? Serial.MinusOne;
+                        Serial serial = targetItem != null ? targetItem.Serial
+                                      : (targetMobile != null ? targetMobile.Serial : Serial.MinusOne);
+
                         if (!interactObj.TargetSerials.Contains(serial))
                             continue;
                     }
@@ -790,136 +1743,99 @@ namespace Server.Custom.QuestSystem.Quests
             }
         }
 
-
-
-        // =====================================================
-        // COLOQUE OS DOIS METODOS NOVOS AQUI EMBAIXO
-        // =====================================================
-
         /// <summary>
-        /// Cria item de quest com tag de tipo para identificacao
+        /// Cria item de quest com tag de tipo para identificacao.
+        /// Se a classe existir no shard, cria a classe real; senao cria um
+        /// QuestItem com a tag (assim itens "virtuais" passam a existir).
         /// </summary>
         private Item CreateQuestItem(string itemType, string itemName, int amount)
         {
-            try
-            {
-                var item = new QuestItem(0x14EF);
-
-                item.QuestItemType = itemType;
-                item.Name = !string.IsNullOrEmpty(itemName) ? itemName : itemType;
-                item.LootType = LootType.Blessed;
-                item.Weight = 1.0;
-                item.Hue = 1153;
-
-                if (amount > 1 && item.Stackable)
-                    item.Amount = amount;
-
-                return item;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[QuestSystem] Erro ao criar QuestItem '{0}': {1}", itemType, ex.Message);
-                return null;
-            }
+            return QuestItemMatcher.Create(itemType, itemName, 0, amount);
         }
 
         /// <summary>
-        /// Entrega itens do TalkTo ao jogador
+        /// Entrega itens (grantItems de TalkTo, recompensas intermediarias) ao jogador.
+        /// Nunca descarta item: se a classe nao existe, cria um QuestItem com tag.
         /// </summary>
         private void GiveItemsToPlayer(PlayerMobile player, Mobile npc, List<ObjectiveGrantItem> items)
         {
-            if (player == null || items == null || items.Count == 0)
+            if (player == null || player.Deleted || items == null || items.Count == 0)
                 return;
 
             foreach (var giveItem in items)
             {
-                if (string.IsNullOrEmpty(giveItem.ItemType) || giveItem.Amount <= 0)
+                if (string.IsNullOrWhiteSpace(giveItem.ItemType) && string.IsNullOrWhiteSpace(giveItem.ItemName))
+                {
+                    Console.WriteLine("[QuestManager] grantItem sem itemType/itemName ignorado.");
                     continue;
-
-                Item item = null;
-
-                Type realType = ScriptCompiler.FindTypeByName(giveItem.ItemType);
-
-                if (realType != null)
-                {
-                    try
-                    {
-                        item = (Item)Activator.CreateInstance(realType);
-                        if (item != null)
-                        {
-                            if (!string.IsNullOrEmpty(giveItem.ItemName))
-                                item.Name = giveItem.ItemName;
-                            if (item.Stackable && giveItem.Amount > 1)
-                                item.Amount = giveItem.Amount;
-                            item.LootType = LootType.Blessed;
-                        }
-                    }
-                    catch { }
-                }
-                else
-                {
-                    item = CreateQuestItem(giveItem.ItemType, giveItem.ItemName, giveItem.Amount);
                 }
 
-                if (item != null)
+                int amount = giveItem.Amount > 0 ? giveItem.Amount : 1;
+
+                for (int n = 0; n < amount; n++)
                 {
-                    if (player.Backpack != null && player.Backpack.TryDropItem(player, item, false))
-                    {
-                        string name = !string.IsNullOrEmpty(giveItem.ItemName) ? giveItem.ItemName : giveItem.ItemType;
-                        player.SendMessage(0x35, "{0} entregou a voce: {1}",
-                            npc != null ? npc.Name : "O NPC", name);
-                    }
+                    // Cria 1 por vez: itens nao-empilhaveis precisam de instancias separadas
+                    Item item = QuestItemMatcher.Create(giveItem.ItemType, giveItem.ItemName, 0, 1);
+
+                    if (item == null)
+                        continue;
+
+                    bool onGround;
+                    if (!QuestItemMatcher.GiveTo(player, item, out onGround))
+                        continue;
+
+                    string name = !string.IsNullOrWhiteSpace(giveItem.ItemName) ? giveItem.ItemName : giveItem.ItemType;
+
+                    if (onGround)
+                        player.SendMessage(QuestConstants.HueWarning, "Sua mochila esta cheia! {0} foi colocado no chao.", name);
                     else
-                    {
-                        item.MoveToWorld(player.Location, player.Map);
-                        player.SendMessage(0x22, "Sua mochila esta cheia! O item foi colocado no chao.");
-                    }
+                        player.SendMessage(QuestConstants.HueSuccess, "{0} entregou a voce: {1}",
+                            npc != null ? npc.Name : "O NPC", name);
                 }
             }
         }
 
         /// <summary>
-        /// Processa craft de item
+        /// Processa craft de item (EventSink.CraftSuccess)
         /// </summary>
         public void OnItemCrafted(PlayerMobile player, Item item, string craftSystem)
         {
-            if (player == null || item == null)
+            if (player == null || player.Deleted || item == null)
                 return;
 
             var data = GetPlayerData(player);
-            string itemType = item.GetType().Name;
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is CraftObjective craftObj))
+                    var craftObj = definition.Objectives[i] as CraftObjective;
+                    if (craftObj == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
+                    if (!definition.IsObjectiveActive(i, active.Progress))
                         continue;
 
-                    // Verifica tipo
-                    if (!itemType.Equals(craftObj.ItemType, StringComparison.OrdinalIgnoreCase))
+                    if (!QuestItemMatcher.Matches(item, craftObj.ItemType, craftObj.ItemName))
                         continue;
 
-                    // Verifica sistema de craft
-                    if (!string.IsNullOrEmpty(craftObj.CraftSkill) &&
-                        !craftSystem.Equals(craftObj.CraftSkill, StringComparison.OrdinalIgnoreCase))
+                    // Verifica sistema de craft (vazio = qualquer um)
+                    if (!string.IsNullOrWhiteSpace(craftObj.CraftSkill) &&
+                        !craftObj.CraftSkill.Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    // Verifica excepcional
-                    if (craftObj.RequireExceptional)
-                    {
-                        // TODO: Verificar qualidade do item
-                    }
+                    // Verifica qualidade excepcional
+                    if (craftObj.RequireExceptional && !IsExceptional(item))
+                        continue;
 
                     UpdateProgress(player, active.QuestId, i, 1);
                 }
@@ -927,33 +1843,60 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Processa uso de skill
+        /// Le a propriedade Quality (ItemQuality) de itens craftaveis via reflexao,
+        /// porque nem toda classe de item a expoe.
+        /// </summary>
+        private static bool IsExceptional(Item item)
+        {
+            if (item == null)
+                return false;
+
+            try
+            {
+                var prop = item.GetType().GetProperty("Quality");
+
+                if (prop != null && prop.PropertyType == typeof(ItemQuality))
+                    return (ItemQuality)prop.GetValue(item, null) == ItemQuality.Exceptional;
+            }
+            catch
+            {
+                // sem Quality => nao excepcional
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Processa uso de skill (EventSink.SkillCheck)
         /// </summary>
         public void OnSkillUsed(PlayerMobile player, SkillName skill, bool success)
         {
-            if (player == null)
+            if (player == null || player.Deleted)
                 return;
 
             var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is UseSkillObjective useObj))
+                    var useObj = definition.Objectives[i] as UseSkillObjective;
+                    if (useObj == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
+                    if (!definition.IsObjectiveActive(i, active.Progress))
                         continue;
 
-                    if (useObj.Skill != skill)
+                    if (!SkillMatches(useObj.Skill, useObj.SkillName, skill))
                         continue;
 
                     if (useObj.RequireSuccess && !success)
@@ -965,54 +1908,85 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Processa ganho de skill
+        /// Processa ganho de skill (EventSink.SkillGain)
         /// </summary>
         public void OnSkillGain(PlayerMobile player, SkillName skill, double newValue)
         {
-            if (player == null)
+            if (player == null || player.Deleted)
                 return;
 
             var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return;
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is SkillGainObjective gainObj))
+                    var gainObj = definition.Objectives[i] as SkillGainObjective;
+                    if (gainObj == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
+                    if (!definition.IsObjectiveActive(i, active.Progress))
                         continue;
 
-                    if (gainObj.Skill != skill)
+                    if (!SkillMatches(gainObj.Skill, gainObj.SkillName, skill))
                         continue;
 
-                    if (gainObj.Mode == "ReachValue")
+                    if (string.Equals(gainObj.Mode, "GainAmount", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (newValue >= gainObj.TargetValue)
-                        {
-                            // Completa
-                            active.Progress[i].Current = active.Progress[i].Required;
-                            active.Progress[i].IsComplete = true;
-                            active.CheckCompletion();
+                        UpdateProgress(player, active.QuestId, i, 1);
+                        continue;
+                    }
 
-                            QuestNotificationManager.Instance.NotifyObjectiveComplete(player, definition, gainObj);
-
-                            if (active.Status == QuestStatus.ReadyToTurnIn)
-                            {
-                                QuestNotificationManager.Instance.NotifyQuestReadyToTurnIn(player, definition);
-                            }
-                        }
+                    // Modo padrao: ReachValue
+                    if (newValue >= gainObj.TargetValue)
+                    {
+                        int remaining = gainObj.Required - active.Progress[i].Current;
+                        if (remaining > 0)
+                            UpdateProgress(player, active.QuestId, i, remaining);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Casa a skill do objetivo com a skill do evento.
+        /// Aceita o enum OU o nome em texto — o loader antigo só lia uma das
+        /// duas chaves e a outra ficava com o valor padrao (Alchemy),
+        /// fazendo o objetivo contar a skill errada.
+        /// </summary>
+        private static bool SkillMatches(SkillName objectiveSkill, string objectiveSkillName, SkillName actual)
+        {
+            if (!string.IsNullOrWhiteSpace(objectiveSkillName))
+            {
+                SkillName parsed;
+                if (TryParseSkill(objectiveSkillName, out parsed))
+                    return parsed == actual;
+
+                // texto livre (ex.: "Curar") — compara normalizado com o nome do enum
+                return QuestItemMatcher.Normalize(objectiveSkillName) == QuestItemMatcher.Normalize(actual.ToString());
+            }
+
+            return objectiveSkill == actual;
+        }
+
+        /// <summary>Converte texto em SkillName sem o fallback silencioso para Alchemy.</summary>
+        internal static bool TryParseSkill(string text, out SkillName skill)
+        {
+            skill = SkillName.Alchemy;
+
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            return Enum.TryParse<SkillName>(text.Trim(), true, out skill);
         }
 
         #endregion
@@ -1020,292 +1994,134 @@ namespace Server.Custom.QuestSystem.Quests
         #region Helper Methods
 
         /// <summary>
-        /// Conta itens na mochila - suporta tipos custom por nome
+        /// Conta itens na mochila (recursivo) — suporta tipos reais e virtuais.
         /// </summary>
         private int CountItemsInPack(PlayerMobile player, string itemTypeName, int hue = 0)
         {
-            if (player?.Backpack == null)
-                return 0;
-
-            Type itemType = ScriptCompiler.FindTypeByName(itemTypeName);
-
-            // Tipo existe no ServUO - busca normal
-            if (itemType != null)
-            {
-                Item[] items = player.Backpack.FindItemsByType(itemType);
-                int count = 0;
-
-                foreach (Item item in items)
-                {
-                    if (hue == 0 || item.Hue == hue)
-                        count += item.Amount;
-                }
-
-                return count;
-            }
-
-            // Tipo custom (CartaLacradaOlin, etc) - busca por nome
-            return CountItemsByName(player, itemTypeName, hue);
+            return QuestItemMatcher.CountInPack(player, itemTypeName, hue);
         }
 
-        /// <summary>
-        /// Conta itens na mochila por nome (para itens custom de quest)
-        /// </summary>
+        /// <summary>Mantido por compatibilidade; delega para o QuestItemMatcher.</summary>
         private int CountItemsByName(PlayerMobile player, string itemTypeName, int hue = 0)
         {
-            if (player?.Backpack == null || string.IsNullOrEmpty(itemTypeName))
-                return 0;
-
-            int count = 0;
-
-            foreach (Item item in player.Backpack.Items)
-            {
-                if (item == null || item.Deleted)
-                    continue;
-
-                // Verifica pelo Name do item
-                if (item.Name != null && item.Name.IndexOf(itemTypeName, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    if (hue == 0 || item.Hue == hue)
-                        count += item.Amount;
-                    continue;
-                }
-
-                // Verifica por tag QuestItemType (mais preciso)
-                string tag = GetQuestItemTag(item);
-                if (tag != null && tag.Equals(itemTypeName, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (hue == 0 || item.Hue == hue)
-                        count += item.Amount;
-                }
-            }
-
-            return count;
+            return QuestItemMatcher.CountInPack(player, itemTypeName, hue);
         }
 
-        /// <summary>
-        /// Recupera a tag de tipo de quest de um item
-        /// </summary>
+        /// <summary>Recupera a tag de tipo de quest de um item.</summary>
         private string GetQuestItemTag(Item item)
         {
-            if (item == null)
-                return null;
-
-            // Usa NamedPropertyInfo se disponivel, senao usa Name
-            // A tag e guardada no momento da criacao do item
-            try
-            {
-                if (item is QuestItem qi)
-                    return qi.QuestItemType;
-            }
-            catch { }
-
-            return null;
+            return QuestItemMatcher.GetQuestTag(item);
         }
 
         /// <summary>
-        /// Da itens de quest ao jogador - suporta tipos custom
+        /// Da itens de quest ao jogador ao aceitar (DeliverObjective.GiveItemOnAccept).
         /// </summary>
         private void GiveQuestItems(PlayerMobile player, QuestDefinition definition)
         {
-            foreach (var obj in definition.Objectives)
-            {
-                if (obj is DeliverObjective deliver && deliver.GiveItemOnAccept)
-                {
-                    Type itemType = ScriptCompiler.FindTypeByName(deliver.ItemType);
-
-                    Item item = null;
-
-                    if (itemType != null)
-                    {
-                        // Tipo existe no ServUO
-                        try
-                        {
-                            item = Activator.CreateInstance(itemType) as Item;
-                            if (item != null)
-                            {
-                                item.Name = deliver.ItemName ?? item.Name;
-                                if (deliver.ItemHue > 0)
-                                    item.Hue = deliver.ItemHue;
-                            }
-                        }
-                        catch { }
-                    }
-                    else
-                    {
-                        // Tipo custom - cria item generico
-                        item = CreateQuestItem(deliver.ItemType, deliver.ItemName, 1);
-                    }
-
-                    if (item != null)
-                    {
-                        item.LootType = LootType.Blessed;
-                        player.AddToBackpack(item);
-                        player.SendMessage(0x40, "Voce recebeu: {0}", item.Name);
-                    }
-                }
-            }
-        }
-
-        // ── No QuestManager.cs ─────────────────────────────────────────────────
-
-        /// <summary>
-        /// Chamado quando um membro da party recebe crédito de kill compartilhado.
-        /// Só processa objetivos com CountPartyKills == true.
-        /// </summary>
-
-
-        /// <summary>
-        /// Processa evento de kill
-        /// isPartyKill = true quando o crédito vem de um membro da party (não o killer direto)
-        /// </summary>
-        public void OnCreatureKilled(PlayerMobile player, Mobile killed, bool isPartyKill = false)
-        {
-            if (player == null || killed == null)
+            if (player == null || definition == null)
                 return;
 
-            var data = GetPlayerData(player);
-            string killedType = killed.GetType().Name;
-
-            foreach (var active in data.ActiveQuests.ToList())
+            foreach (var obj in definition.Objectives)
             {
-                if (active.Status != QuestStatus.Active)
+                var deliver = obj as DeliverObjective;
+                if (deliver == null || !deliver.GiveItemOnAccept)
                     continue;
 
-                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
-                if (definition == null)
-                    continue;
-
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                if (string.IsNullOrWhiteSpace(deliver.ItemType) && string.IsNullOrWhiteSpace(deliver.ItemName))
                 {
-                    if (!(definition.Objectives[i] is KillObjective killObj))
+                    Console.WriteLine("[QuestManager] AVISO: Deliver de '" + definition.Id +
+                                      "' sem itemType — nada sera entregue ao aceitar.");
+                    continue;
+                }
+
+                int amount = deliver.Required > 0 ? deliver.Required : 1;
+
+                for (int n = 0; n < amount; n++)
+                {
+                    Item item = QuestItemMatcher.Create(deliver.ItemType, deliver.ItemName, deliver.ItemHue, 1);
+
+                    if (item == null)
                         continue;
 
-                    if (active.Progress[i].IsComplete)
-                        continue;
+                    bool onGround;
+                    QuestItemMatcher.GiveTo(player, item, out onGround);
 
-                    // ── FILTRO DE PARTY: se o kill veio de um membro da party,
-                    //    só conta se o objetivo permitir compartilhamento ──────
-                    if (isPartyKill && !killObj.CountPartyKills)
-                        continue;
-
-                    // Verifica se é o tipo correto
-                    bool matches = false;
-
-                    if (!string.IsNullOrEmpty(killObj.TargetType))
-                    {
-                        matches = killedType.Equals(killObj.TargetType, StringComparison.OrdinalIgnoreCase);
-                    }
-
-                    if (!matches && killObj.TargetTypes != null && killObj.TargetTypes.Count > 0)
-                    {
-                        matches = killObj.TargetTypes.Any(t =>
-                            killedType.Equals(t, StringComparison.OrdinalIgnoreCase));
-                    }
-
-                    if (matches)
-                    {
-                        // Verifica região se necessário
-                        if (!string.IsNullOrEmpty(killObj.RequiredRegion))
-                        {
-                            if (player.Region == null ||
-                                !player.Region.Name.Equals(killObj.RequiredRegion, StringComparison.OrdinalIgnoreCase))
-                                continue;
-                        }
-
-                        UpdateProgress(player, active.QuestId, i, 1);
-                    }
+                    if (onGround)
+                        player.SendMessage(QuestConstants.HueWarning, "Sua mochila esta cheia! {0} foi colocado no chao.", item.Name);
+                    else
+                        player.SendMessage(QuestConstants.HueSuccess, "Voce recebeu: {0}", item.Name);
                 }
             }
         }
 
-
-
         /// <summary>
-        /// Processa entrega de item a NPC específico
-        /// Chamado pelo NPC ao falar "entregar" ou drag-drop
+        /// Processa entrega de item a NPC específico.
+        /// Chamado pelo NPC ao falar "entregar" ou por drag-drop.
         /// </summary>
         public bool OnDeliverItem(PlayerMobile player, Mobile npc, string npcId, Item draggedItem = null)
         {
-            if (player == null || npc == null)
+            if (player == null || player.Deleted || npc == null)
                 return false;
 
             var data = GetPlayerData(player);
+            if (data == null || data.ActiveQuests.Count == 0)
+                return false;
+
             bool anyDelivered = false;
+            List<string> npcIdentifiers = GetNpcIdentifiers(npc, npcId);
 
             foreach (var active in data.ActiveQuests.ToList())
             {
-                if (active.Status != QuestStatus.Active)
+                if (active.Status != QuestStatus.Active && active.Status != QuestStatus.ReadyToTurnIn)
                     continue;
 
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
                 if (definition == null)
                     continue;
 
-                for (int i = 0; i < definition.Objectives.Count; i++)
+                for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
                 {
-                    if (!(definition.Objectives[i] is DeliverObjective deliverObj))
+                    var deliverObj = definition.Objectives[i] as DeliverObjective;
+                    if (deliverObj == null)
                         continue;
 
                     if (active.Progress[i].IsComplete)
                         continue;
 
                     // ── 1. Valida se este NPC é o destinatário ────────────────
-                    bool npcMatch = false;
+                    if (!MatchesNpc(deliverObj.TargetNpcId, deliverObj.TargetNpcName, npc, npcIdentifiers))
+                        continue;
 
-                    if (!string.IsNullOrEmpty(deliverObj.TargetNpcId))
-                        npcMatch = deliverObj.TargetNpcId.Equals(npcId, StringComparison.OrdinalIgnoreCase);
-
-                    if (!npcMatch && !string.IsNullOrEmpty(deliverObj.TargetNpcName) && npc.Name != null)
-                        npcMatch = npc.Name.IndexOf(deliverObj.TargetNpcName, StringComparison.OrdinalIgnoreCase) >= 0;
-
-                    if (!npcMatch)
+                    if (string.IsNullOrWhiteSpace(deliverObj.ItemType) && string.IsNullOrWhiteSpace(deliverObj.ItemName))
                     {
-                        Console.WriteLine($"[QuestManager] OnDeliverItem: NPC '{npc.Name}' nao e o destinatario de '{deliverObj.ItemType}'");
+                        Console.WriteLine("[QuestManager] OnDeliverItem: objetivo Deliver de '" + definition.Id +
+                                          "' sem itemType/itemName — impossivel validar.");
                         continue;
                     }
 
                     // ── 2. Verifica se jogador possui o item ──────────────────
-                    int countInBag = 0;
-                    Type deliverType = ScriptCompiler.FindTypeByName(deliverObj.ItemType);
+                    int needed = deliverObj.Required - active.Progress[i].Current;
+                    if (needed <= 0)
+                        needed = deliverObj.Required > 0 ? deliverObj.Required : 1;
+
+                    int countInBag;
 
                     if (draggedItem != null)
                     {
-                        // Drag-drop: valida o item arrastado
-                        bool itemMatch = false;
-
-                        if (deliverType != null && deliverType.IsInstanceOfType(draggedItem))
-                            itemMatch = true;
-
-                        if (!itemMatch)
-                        {
-                            string tag = GetQuestItemTag(draggedItem);
-                            if (tag != null && tag.Equals(deliverObj.ItemType, StringComparison.OrdinalIgnoreCase))
-                                itemMatch = true;
-                        }
-
-                        if (!itemMatch && draggedItem.Name != null &&
-                            draggedItem.Name.IndexOf(deliverObj.ItemType, StringComparison.OrdinalIgnoreCase) >= 0)
-                            itemMatch = true;
-
-                        if (itemMatch && deliverObj.ItemHue > 0 && draggedItem.Hue != deliverObj.ItemHue)
-                            itemMatch = false;
-
-                        if (!itemMatch)
+                        if (!QuestItemMatcher.Matches(draggedItem, deliverObj.ItemType, deliverObj.ItemName, deliverObj.ItemHue))
                         {
                             npc.Say($"Isso nao e o que preciso, {player.Name}.");
                             continue;
                         }
 
-                        countInBag = draggedItem.Amount;
+                        // Item arrastado + o resto que estiver no inventario
+                        countInBag = Math.Max(1, draggedItem.Amount) +
+                                     QuestItemMatcher.CountInPack(player, deliverObj.ItemType, deliverObj.ItemName, deliverObj.ItemHue);
                     }
                     else
                     {
-                        // Via fala: busca na mochila
-                        countInBag = CountItemsInPack(player, deliverObj.ItemType, deliverObj.ItemHue);
+                        countInBag = QuestItemMatcher.CountInPack(player, deliverObj.ItemType, deliverObj.ItemName, deliverObj.ItemHue);
                     }
-
-                    int needed = deliverObj.Required - active.Progress[i].Current;
 
                     if (countInBag <= 0)
                     {
@@ -1320,54 +2136,28 @@ namespace Server.Custom.QuestSystem.Quests
                     }
 
                     // ── 3. Consome o item ─────────────────────────────────────
-                    int toConsume = needed;
-
-                    if (draggedItem != null)
+                    if (draggedItem != null && !draggedItem.Deleted)
                     {
-                        // Consome o item arrastado
-                        int take = Math.Min(draggedItem.Amount, toConsume);
-                        if (draggedItem.Amount <= take)
+                        int take = Math.Min(Math.Max(1, draggedItem.Amount), needed);
+
+                        if (!draggedItem.Stackable || draggedItem.Amount <= take)
                             draggedItem.Delete();
                         else
                             draggedItem.Amount -= take;
-                        toConsume -= take;
                     }
 
-                    // Se ainda precisa consumir mais (ou veio via fala)
-                    if (toConsume > 0)
-                    {
-                        if (deliverType != null)
-                        {
-                            foreach (Item bagItem in player.Backpack.FindItemsByType(deliverType).ToList())
-                            {
-                                if (toConsume <= 0) break;
-                                if (deliverObj.ItemHue > 0 && bagItem.Hue != deliverObj.ItemHue) continue;
-
-                                int take = Math.Min(bagItem.Amount, toConsume);
-                                bagItem.Amount -= take;
-                                if (bagItem.Amount <= 0) bagItem.Delete();
-                                toConsume -= take;
-                            }
-                        }
-                        else
-                        {
-                            ConsumeItemsByName(player, deliverObj.ItemType, deliverObj.ItemHue, toConsume);
-                        }
-                    }
+                    QuestItemMatcher.Consume(player, deliverObj.ItemType, deliverObj.ItemName, deliverObj.ItemHue, needed);
 
                     // ── 4. Atualiza progresso ─────────────────────────────────
-                    // Marca diretamente como completo (o item já foi consumido)
-                    active.Progress[i].Current = active.Progress[i].Required;
-                    active.Progress[i].IsComplete = true;
+                    active.Progress[i].SetProgress(active.Progress[i].Required);
 
-                    Console.WriteLine($"[QuestManager] Deliver OK: '{deliverObj.ItemType}' entregue a '{npc.Name}' por {player.Name}");
+                    Console.WriteLine("[QuestManager] Deliver OK: '" + deliverObj.ItemType + "' entregue a '" +
+                                      npc.Name + "' por " + player.Name);
 
-                    // Verifica se a quest toda ficou pronta
                     active.CheckCompletion();
 
-                    var def = definition; // captura para o timer
                     if (active.Status == QuestStatus.ReadyToTurnIn)
-                        QuestNotificationManager.Instance.NotifyQuestReadyToTurnIn(player, def);
+                        QuestNotificationManager.Instance.NotifyQuestReadyToTurnIn(player, definition);
 
                     QuestNotificationManager.Instance.NotifyObjectiveComplete(player, definition, deliverObj);
                     AtualizarMiniGump(player, active.QuestId);
@@ -1380,179 +2170,107 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Consome itens de quest - suporta tipos custom por nome
+        /// Consome itens de quest na entrega final (objetivos Collect com ConsumeOnComplete).
         /// </summary>
-        /// 
-        /// 
         private void ConsumeQuestItems(PlayerMobile player, QuestDefinition definition, ActiveQuest active)
         {
-            if (player?.Backpack == null)
+            if (player == null || player.Deleted || definition == null || active == null)
                 return;
 
-            for (int i = 0; i < definition.Objectives.Count; i++)
+            for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
             {
                 // ── Deliver: item já foi consumido no OnDeliverItem ───────────
-                // NÃO consome novamente aqui!
                 if (definition.Objectives[i] is DeliverObjective)
                     continue;
 
-                int toConsume = 0;
-                string itemTypeName = null;
-                int itemHue = 0;
-
-                if (definition.Objectives[i] is CollectObjective collect && collect.ConsumeOnComplete)
-                {
-                    toConsume = collect.Required;
-                    itemTypeName = collect.ItemType;
-                    itemHue = collect.ItemHue;
-                }
-                else
-                {
+                var collect = definition.Objectives[i] as CollectObjective;
+                if (collect == null || !collect.ConsumeOnComplete)
                     continue;
-                }
 
-                Type itemType = ScriptCompiler.FindTypeByName(itemTypeName);
+                if (!active.Progress[i].IsComplete)
+                    continue;
 
-                if (itemType != null)
+                int toConsume = collect.Required > 0 ? collect.Required : 1;
+
+                int removed = QuestItemMatcher.Consume(player, collect.ItemType, collect.ItemName, collect.ItemHue, toConsume);
+
+                if (removed < toConsume)
                 {
-                    foreach (Item item in player.Backpack.FindItemsByType(itemType).ToList())
-                    {
-                        if (toConsume <= 0) break;
-
-                        if (itemHue > 0 && item.Hue != itemHue)
-                            continue;
-
-                        if (item.Amount <= toConsume)
-                        {
-                            toConsume -= item.Amount;
-                            item.Delete();
-                        }
-                        else
-                        {
-                            item.Amount -= toConsume;
-                            toConsume = 0;
-                        }
-                    }
-                }
-                else
-                {
-                    ConsumeItemsByName(player, itemTypeName, itemHue, toConsume);
+                    Console.WriteLine("[QuestManager] AVISO: consume de '" + collect.ItemType +
+                                      "' removeu " + removed + " de " + toConsume + " para " + player.Name);
                 }
             }
         }
+
         /// <summary>
-        /// Sincroniza objetivos Collect com o que o jogador tem na mochila
+        /// Sincroniza objetivos Collect com o inventario real do jogador.
         /// </summary>
-        private void SyncCollectObjectives(PlayerMobile player, QuestDefinition definition, ActiveQuest active)
+        /// <remarks>
+        /// Correcao critica: a versao anterior desistia do objetivo quando
+        /// ScriptCompiler.FindTypeByName retornava null. Como itens de quest
+        /// "virtuais" (CartaLacradaOlin, AmuletoOssoRunas...) NAO tem classe C#,
+        /// a sincronizacao nunca acontecia e a quest nunca ficava ReadyToTurnIn.
+        /// </remarks>
+        private bool SyncCollectObjectives(PlayerMobile player, QuestDefinition definition, ActiveQuest active, bool notify = false)
         {
-            if (player?.Backpack == null)
-                return;
+            if (player == null || player.Deleted || definition == null || active == null)
+                return false;
 
             bool anyUpdated = false;
 
-            for (int i = 0; i < definition.Objectives.Count; i++)
+            for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
             {
-                if (!(definition.Objectives[i] is CollectObjective collectObj))
+                var collectObj = definition.Objectives[i] as CollectObjective;
+                if (collectObj == null)
                     continue;
 
-                if (active.Progress[i].IsComplete)
-                    continue;
-
-                var itemType = ScriptCompiler.FindTypeByName(collectObj.ItemType);
-                if (itemType == null)
+                if (string.IsNullOrWhiteSpace(collectObj.ItemType) && string.IsNullOrWhiteSpace(collectObj.ItemName))
                 {
-                    Console.WriteLine($"[QuestManager] SyncCollect: tipo '{collectObj.ItemType}' não encontrado.");
+                    Console.WriteLine("[QuestManager] SyncCollect: objetivo " + i + " de '" + definition.Id +
+                                      "' sem itemType — impossivel contar.");
                     continue;
                 }
 
-                int countInBag = 0;
-                foreach (Item bagItem in player.Backpack.FindItemsByType(itemType))
-                    countInBag += bagItem.Amount;
+                int countInBag = QuestItemMatcher.CountInPack(
+                    player, collectObj.ItemType, collectObj.ItemName, collectObj.ItemHue);
 
-                if (countInBag <= 0)
+                int target = Math.Min(countInBag, collectObj.Required);
+
+                if (target == active.Progress[i].Current)
                     continue;
 
-                int needed = collectObj.Required - active.Progress[i].Current;
-                int toAdd = Math.Min(countInBag, needed);
+                bool wasComplete = active.Progress[i].IsComplete;
 
-                if (toAdd <= 0)
-                    continue;
-
-                // Atualiza diretamente, sem passar pelos guards do UpdateProgress
-                active.Progress[i].AddProgress(toAdd);
-
+                active.Progress[i].SetProgress(target);
                 anyUpdated = true;
 
-                Console.WriteLine($"[QuestManager] SyncCollect: objetivo {i} '{collectObj.ItemType}' atualizado para {active.Progress[i].Current}/{active.Progress[i].Required}");
+                Console.WriteLine("[QuestManager] SyncCollect: objetivo " + i + " '" + collectObj.ItemType +
+                                  "' => " + active.Progress[i].Current + "/" + active.Progress[i].Required);
+
+                if (!notify || player.NetState == null)
+                    continue;
+
+                if (active.Progress[i].IsComplete && !wasComplete)
+                    QuestNotificationManager.Instance.NotifyObjectiveComplete(player, definition, collectObj);
+                else
+                    QuestNotificationManager.Instance.NotifyObjectiveProgress(
+                        player, definition, collectObj, active.Progress[i].Current, collectObj.Required);
             }
 
-            // Força recálculo do status da quest
             if (anyUpdated)
                 active.CheckCompletion();
+
+            return anyUpdated;
         }
 
         /// <summary>
-        /// Sincroniza objetivos Deliver com o que o jogador tem na mochila
-        /// (a entrega em si acontece via conversa, não drag-drop)
-        /// </summary>
-
-
-
-
-        /// <summary>
-        /// Consome itens custom por nome (CartaLacradaOlin, etc)
+        /// Consome itens (tipos reais ou virtuais). Mantido por compatibilidade.
         /// </summary>
         private void ConsumeItemsByName(PlayerMobile player, string itemTypeName, int hue, int toConsume)
         {
-            if (player?.Backpack == null || string.IsNullOrEmpty(itemTypeName))
-                return;
-
-            // Cria lista para evitar modificar colecao durante iteracao
-            List<Item> toCheck = new List<Item>(player.Backpack.Items);
-
-            foreach (Item item in toCheck)
-            {
-                if (toConsume <= 0)
-                    break;
-
-                if (item == null || item.Deleted)
-                    continue;
-
-                bool matches = false;
-
-                // Verifica por nome
-                if (item.Name != null && item.Name.IndexOf(itemTypeName, StringComparison.OrdinalIgnoreCase) >= 0)
-                    matches = true;
-
-                // Verifica por tag QuestItemType
-                if (!matches)
-                {
-                    string tag = GetQuestItemTag(item);
-                    if (tag != null && tag.Equals(itemTypeName, StringComparison.OrdinalIgnoreCase))
-                        matches = true;
-                }
-
-                if (!matches)
-                    continue;
-
-                if (hue > 0 && item.Hue != hue)
-                    continue;
-
-                if (item.Amount <= toConsume)
-                {
-                    toConsume -= item.Amount;
-                    item.Delete();
-                }
-                else
-                {
-                    item.Amount -= toConsume;
-                    toConsume = 0;
-                }
-            }
+            QuestItemMatcher.Consume(player, itemTypeName, hue, toConsume);
         }
-        /// <summary>
-        /// Dá recompensas ao jogador
-        /// </summary>
+
         /// <summary>
         /// Dá recompensas ao jogador
         /// </summary>
@@ -1643,8 +2361,14 @@ namespace Server.Custom.QuestSystem.Quests
             {
                 foreach (var rewardItem in rewards.Items)
                 {
+                    if (string.IsNullOrWhiteSpace(rewardItem.Type) && string.IsNullOrWhiteSpace(rewardItem.Name))
+                    {
+                        Console.WriteLine("[QuestSystem] Recompensa de item sem 'type' ignorada.");
+                        continue;
+                    }
+
                     // Verifica chance
-                    if (rewardItem.Chance < 100)
+                    if (rewardItem.Chance > 0 && rewardItem.Chance < 100)
                     {
                         if (Utility.Random(100) >= rewardItem.Chance)
                         {
@@ -1653,80 +2377,73 @@ namespace Server.Custom.QuestSystem.Quests
                         }
                     }
 
-                    Type itemType = ScriptCompiler.FindTypeByName(rewardItem.Type);
-                    if (itemType == null)
+                    int amount = rewardItem.Amount > 0 ? rewardItem.Amount : 1;
+
+                    // Cria a primeira instancia para saber se e empilhavel
+                    Item probe = QuestItemMatcher.Create(rewardItem.Type, rewardItem.Name, rewardItem.Hue, 1);
+                    if (probe == null)
+                        continue;
+
+                    if (probe.Stackable && amount > 1)
                     {
-                        Console.WriteLine($"[QuestSystem] ERRO: Tipo nao encontrado: {rewardItem.Type}");
+                        probe.Amount = amount;
+
+                        bool onGround;
+                        QuestItemMatcher.GiveTo(player, probe, out onGround);
+
+                        player.SendMessage(QuestConstants.HueSuccess, "Voce recebeu: {0}x {1}",
+                            amount, rewardItem.Name ?? probe.Name ?? rewardItem.Type);
+
+                        if (onGround)
+                            player.SendMessage(QuestConstants.HueWarning, "Sua mochila esta cheia! Item colocado no chao.");
+
+                        Console.WriteLine($"[QuestSystem] Item stackavel dado: {amount}x {rewardItem.Type}");
                         continue;
                     }
 
-                    try
+                    // Nao empilhavel: entrega a sondagem e cria o restante
+                    for (int i = 0; i < amount; i++)
                     {
-                        Item item = Activator.CreateInstance(itemType) as Item;
-                        if (item != null)
-                        {
-                            if (!string.IsNullOrEmpty(rewardItem.Name))
-                                item.Name = rewardItem.Name;
-                            if (rewardItem.Hue > 0)
-                                item.Hue = rewardItem.Hue;
+                        Item single = i == 0
+                            ? probe
+                            : QuestItemMatcher.Create(rewardItem.Type, rewardItem.Name, rewardItem.Hue, 1);
 
-                            // Se é stackável e quantidade > 1
-                            if (item.Stackable && rewardItem.Amount > 1)
-                            {
-                                item.Amount = rewardItem.Amount;
+                        if (single == null)
+                            continue;
 
-                                if (player.Backpack != null)
-                                {
-                                    player.Backpack.DropItem(item);
-                                    player.SendMessage(0x40, $"Voce recebeu: {rewardItem.Amount}x {rewardItem.Name ?? item.Name}");
-                                    Console.WriteLine($"[QuestSystem] Item stackavel dado: {rewardItem.Amount}x {rewardItem.Type}");
-                                }
-                                else
-                                {
-                                    item.Delete();
-                                }
-                            }
-                            else
-                            {
-                                // Não stackável - cria múltiplos
-                                for (int i = 0; i < rewardItem.Amount; i++)
-                                {
-                                    Item singleItem;
-                                    if (i == 0)
-                                    {
-                                        singleItem = item;
-                                    }
-                                    else
-                                    {
-                                        singleItem = Activator.CreateInstance(itemType) as Item;
-                                        if (singleItem == null)
-                                            continue;
+                        bool onGround;
+                        QuestItemMatcher.GiveTo(player, single, out onGround);
 
-                                        if (!string.IsNullOrEmpty(rewardItem.Name))
-                                            singleItem.Name = rewardItem.Name;
-                                        if (rewardItem.Hue > 0)
-                                            singleItem.Hue = rewardItem.Hue;
-                                    }
-
-                                    if (player.Backpack != null)
-                                    {
-                                        player.Backpack.DropItem(singleItem);
-                                    }
-                                    else
-                                    {
-                                        singleItem.Delete();
-                                    }
-                                }
-
-                                player.SendMessage(0x40, $"Voce recebeu: {rewardItem.Amount}x {rewardItem.Name ?? item.Name}");
-                                Console.WriteLine($"[QuestSystem] Itens nao stackaveis dados: {rewardItem.Amount}x {rewardItem.Type}");
-                            }
-                        }
+                        if (onGround)
+                            player.SendMessage(QuestConstants.HueWarning, "Sua mochila esta cheia! {0} foi colocado no chao.", single.Name);
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[QuestSystem] ERRO ao criar item {rewardItem.Type}: {ex.Message}");
-                    }
+
+                    player.SendMessage(QuestConstants.HueSuccess, "Voce recebeu: {0}x {1}",
+                        amount, rewardItem.Name ?? probe.Name ?? rewardItem.Type);
+
+                    Console.WriteLine($"[QuestSystem] Itens dados: {amount}x {rewardItem.Type}");
+                }
+            }
+
+            // Titles
+            // Obs.: este ServUO nao expoe NamePrefix/NameSuffix em Mobile, entao o
+            // titulo e registrado como flag de quest (leia com GetQuestFlag) e
+            // anunciado ao jogador. Um shard que queira o titulo visivel no nome
+            // deve sobrescrever PlayerMobile.ApplyNameSuffix e ler essas flags.
+            if (rewards.Titles != null && rewards.Titles.Count > 0)
+            {
+                var titleData = GetPlayerData(player);
+
+                foreach (var titleReward in rewards.Titles)
+                {
+                    if (string.IsNullOrWhiteSpace(titleReward.Title))
+                        continue;
+
+                    if (titleData != null)
+                        titleData.SetFlag("title_" + QuestItemMatcher.Normalize(titleReward.Title), true);
+
+                    player.SendMessage(QuestConstants.HueSuccess, $"Voce recebeu o titulo: {titleReward.Title}");
+                    Console.WriteLine($"[QuestSystem] Titulo concedido: {titleReward.Title}");
                 }
             }
 
@@ -1737,13 +2454,33 @@ namespace Server.Custom.QuestSystem.Quests
                 {
                     try
                     {
-                        Skill skill = player.Skills[skillReward.Skill];
-                        if (skill != null)
+                        SkillName target = ResolveRewardSkill(skillReward);
+
+                        Skill skill = player.Skills[target];
+                        if (skill == null)
+                            continue;
+
+                        double cap = player.SkillsCap;
+                        double total = 0;
+                        foreach (Skill s in player.Skills)
+                            total += s.Base;
+
+                        if (cap > 0 && total + skillReward.Amount > cap)
                         {
-                            skill.Base += skillReward.Amount;
-                            player.SendMessage(0x40, $"Sua habilidade {skillReward.SkillName ?? skillReward.Skill.ToString()} aumentou em {skillReward.Amount}.");
-                            Console.WriteLine($"[QuestSystem] Skill {skillReward.Skill} +{skillReward.Amount}");
+                            player.SendMessage(QuestConstants.HueWarning,
+                                "Voce atingiu o limite de skills: o ganho de {0} foi reduzido.", target);
+
+                            double room = cap - total;
+                            if (room <= 0)
+                                continue;
+
+                            skillReward.Amount = room;
                         }
+
+                        skill.Base += skillReward.Amount;
+                        player.SendMessage(QuestConstants.HueSuccess,
+                            $"Sua habilidade {target} aumentou em {skillReward.Amount}.");
+                        Console.WriteLine($"[QuestSystem] Skill {target} +{skillReward.Amount}");
                     }
                     catch (Exception ex)
                     {
@@ -1799,6 +2536,25 @@ namespace Server.Custom.QuestSystem.Quests
 
             Console.WriteLine("[QuestSystem] GiveRewards concluido com sucesso.");
         }
+
+        /// <summary>
+        /// Resolve a skill de uma recompensa.
+        /// Se o JSON trouxe um nome valido ("Healing"), usa o nome — o enum
+        /// Skill sozinho vinha com o padrao Alchemy quando o loader nao
+        /// encontrava a chave "skill", dando bonus na skill errada.
+        /// </summary>
+        private static SkillName ResolveRewardSkill(SkillReward reward)
+        {
+            if (reward == null)
+                return SkillName.Alchemy;
+
+            SkillName parsed;
+            if (!string.IsNullOrWhiteSpace(reward.SkillName) && TryParseSkill(reward.SkillName, out parsed))
+                return parsed;
+
+            return reward.Skill;
+        }
+
         private string FormatTimeSpan(TimeSpan ts)
         {
             if (ts.TotalHours >= 1)

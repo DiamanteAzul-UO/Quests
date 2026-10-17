@@ -1,27 +1,27 @@
 {
   "_meta": {
-    "version": "1.1.0",
-    "description": "Quest Chain da Fortaleza - Capita Maelis",
+    "version": "3.0.1",
+    "description": "Cadeia de tutorial de New Haven — 7 quests encadeadas",
     "author": "Alexsander - ElfuDaLuz",
-    "created": "2026"
+    "created": "2026",
+    "note": "Substitui a copia duplicada de fortaleza_abalada.json que ocupava este arquivo. Conteudo vindo de \"teste\", que era a versao correta e nunca tinha sido instalada em Data/Quests."
   },
-
   "Quests": [
     {
       "identity": {
-        "id": "quest_fortaleza_conhecendo",
-        "name": "Conhecendo a Fortaleza",
-        "description": "A Capita Maelis nao entrega missao a quem nao conhece o que protege. Fale com Olin nas Docas, Sera na Enfermaria e Brina no Refeitorio e traga uma carta lacrada de cada um.",
-        "category": "Main",
-        "difficulty": "Easy",
-        "chainId": "chain_fortaleza_abalada",
+        "id": "quest_nh_orientacao",
+        "name": "Onde Estou?",
+        "description": "Você não conhece essa cidade. Encontre alguém que possa te orientar.",
+        "category": "Tutorial",
+        "difficulty": "Trivial",
+        "chainId": "chain_new_haven_tutorial",
         "chainOrder": 1
       },
       "npcs": {
-        "giverId": "npc_capita_maelis",
-        "giverName": "Capita Maelis",
-        "turnInId": "npc_capita_maelis",
-        "turnInName": "Capita Maelis"
+        "giverId": "npc_guide_newhaven",
+        "giverName": "Marcus, o Guia",
+        "turnInId": "npc_guide_newhaven",
+        "turnInName": "Marcus, o Guia"
       },
       "settings": {
         "repeatable": false,
@@ -30,220 +30,534 @@
       "objectives": [
         {
           "type": "TalkTo",
-          "description": "Fale com Olin nas Docas",
-          "targetNpcId": "npc_mestre_docas_olin",
-          "targetNpcName": "Mestre de Docas Olin",
+          "description": "Fale com Marcus, o Guia de New Haven",
+          "targetNpcId": "npc_guide_newhaven",
+          "targetNpcName": "Marcus, o Guia",
           "required": 1,
-          "locationHint": "Olin fica no cais da Fortaleza, entre caixas e cheiro de maresia."
-        },
-        {
-          "type": "TalkTo",
-          "description": "Fale com Sera na Enfermaria",
-          "targetNpcId": "npc_enfermeira_sera",
-          "targetNpcName": "Enfermeira Sera",
-          "required": 1,
-          "locationHint": "Sera cuida dos feridos que voltam da linha de frente."
-        },
-        {
-          "type": "TalkTo",
-          "description": "Fale com Brina no Refeitorio",
-          "targetNpcId": "npc_cozinheira_brina",
-          "targetNpcName": "Cozinheira Brina",
-          "required": 1,
-          "locationHint": "Brina comanda a cozinha com mao firme e colher mais firme ainda."
-        },
-        {
-          "type": "Collect",
-          "description": "Obtenha a Carta Lacrada de Olin",
-          "itemType": "CartaLacradaOlin",
-          "itemName": "Carta Lacrada de Olin",
-          "required": 1,
-          "consumeOnComplete": true,
-          "locationHint": "Olin entregara a carta apos ouvir que voce veio a mando da Capita."
-        },
-        {
-          "type": "Collect",
-          "description": "Obtenha a Carta Lacrada de Sera",
-          "itemType": "CartaLacradaSera",
-          "itemName": "Carta Lacrada de Sera",
-          "required": 1,
-          "consumeOnComplete": true,
-          "locationHint": "Sera escreve enquanto trabalha. Peca a carta com paciencia."
-        },
-        {
-          "type": "Collect",
-          "description": "Obtenha a Carta Lacrada de Brina",
-          "itemType": "CartaLacradaBrina",
-          "itemName": "Carta Lacrada de Brina",
-          "required": 1,
-          "consumeOnComplete": true,
-          "locationHint": "Brina lacra a carta com cera quente. Nao amasse."
+          "locationHint": "Marcus fica perto do banco de New Haven, no centro da cidade."
         }
       ],
       "rewards": {
-        "gold": 0,
-        "fame": 50
+        "gold": 25,
+        "fame": 5
       },
       "dialogue": {
         "onAccept": [
-          "Veio procurar sentido? Vai encontrar trabalho primeiro.",
-          "Missao existe. Mas nao dou missao a quem nao entende o que protege.",
-          "Va as Docas falar com Olin. Depois a Enfermaria com Sera. Depois ao Refeitorio com Brina.",
-          "Traga uma carta lacrada de cada um. Sem atalhos.",
-          "Va. Conheca a gente dessa Fortaleza. De verdade, nao de passagem.",
-          "Quando tiver as tres cartas, volte. Eu estarei aqui."
-        ],
-        "onProgress": [
-          "Voce ainda nao trouxe as tres provas.",
-          "Nao volte com desculpa. Volte com carta.",
-          "Olin nas Docas. Sera na Enfermaria. Brina no Refeitorio.",
-          "Cada um sabe o que eu preciso saber."
+          "Você parece perdido. Acontece com todo mundo que chega aqui.",
+          "Sou Marcus. Fico aqui perto do banco pra ajudar gente como você.",
+          "New Haven é pequena, mas tem tudo que você precisa pra começar.",
+          "Primeiro: comida. Sem comer, você não dura."
         ],
         "onComplete": [
-          "Bom. Agora voce viu gente, nao so ruina.",
-          "Olin conta o que o mar esconde. Sera ve o que os homens nao falam. Brina ouve o que ninguem percebe que diz.",
-          "Proximo passo: va ate a Biblioteca. Procure pela Erudita Naira.",
-          "Use as palavras certas. Fale sobre cinzas e rachaduras. Ela vai entender."
+          "Bom. Agora você sabe quem eu sou e onde me encontrar.",
+          "Vamos ao que importa."
         ]
       },
-      "nextQuest": "quest_fortaleza_biblioteca"
+      "nextQuest": "quest_nh_comida"
     },
     {
       "identity": {
-        "id": "quest_fortaleza_biblioteca",
-        "name": "Segredos da Biblioteca",
-        "description": "Maelis precisa entender o que causou as cinzas e rachaduras apos o terremoto. A Erudita Naira guarda registros que o Conselho prefere esquecer. Consulte-a na Biblioteca e traga a resposta.",
-        "category": "Main",
-        "difficulty": "Normal",
-        "chainId": "chain_fortaleza_abalada",
+        "id": "quest_nh_comida",
+        "name": "Comida Primeiro",
+        "description": "Marcus disse que sem comida você não dura. Consiga maçãs e pão.",
+        "category": "Tutorial",
+        "difficulty": "Trivial",
+        "chainId": "chain_new_haven_tutorial",
         "chainOrder": 2
       },
       "npcs": {
-        "giverId": "npc_capita_maelis",
-        "giverName": "Capita Maelis",
-        "turnInId": "npc_capita_maelis",
-        "turnInName": "Capita Maelis"
+        "giverId": "npc_guide_newhaven",
+        "giverName": "Marcus, o Guia",
+        "turnInId": "npc_guide_newhaven",
+        "turnInName": "Marcus, o Guia"
       },
       "settings": {
         "repeatable": false
       },
       "prerequisites": {
-        "questIds": ["quest_fortaleza_conhecendo"]
+        "questIds": [
+          "quest_nh_orientacao"
+        ]
       },
       "objectives": [
         {
-          "type": "TalkTo",
-          "description": "Fale com a Erudita Naira na Biblioteca",
-          "targetNpcId": "npc_erudita_naira",
-          "targetNpcName": "Erudita Naira",
-          "required": 1,
-          "locationHint": "Naira estuda entre pilhas de tomos empoeirados. Nao a interrompa sem motivo."
+          "type": "Collect",
+          "description": "Colete 5 Maçãs",
+          "itemType": "Apple",
+          "itemName": "Maçã",
+          "required": 5,
+          "consumeOnComplete": false,
+          "locationHint": "Macieiras ficam espalhadas pela cidade. Também dá pra comprar do fazendeiro."
         },
         {
           "type": "Collect",
-          "description": "Obtenha a Carta Lacrada de Naira",
-          "itemType": "CartaLacradaNaira",
-          "itemName": "Carta Lacrada de Naira",
-          "required": 1,
-          "consumeOnComplete": true,
-          "locationHint": "Mencione cinzas ou rachaduras para que Naira tome voce a serio."
+          "description": "Colete 3 Pães",
+          "itemType": "BreadLoaf",
+          "itemName": "Pão",
+          "required": 3,
+          "consumeOnComplete": false,
+          "locationHint": "O padeiro vende pão perto da praça central."
         }
       ],
       "rewards": {
-        "gold": 0,
-        "fame": 75
-      },
-      "dialogue": {
-        "onAccept": [
-          "Agora que voce conhece o pessoal, preciso que investigue algo mais fundo.",
-          "As cinzas e rachaduras que apareceram depois do terremoto nao sao naturais. Eu sinto.",
-          "Va ate a Biblioteca. Procure pela Erudita Naira.",
-          "Ela guarda registros que o Conselho prefere enterrado. Traga a resposta dela para mim.",
-          "Naira sabe mais do que aparenta. E fala menos do que sabe.",
-          "Mencione cinzas ou rachaduras para chamar a atencao dela.",
-          "Volte com a carta lacrada. Nao com resumo, nao com interpretacao. Com a carta."
-        ],
-        "onProgress": [
-          "Nao volte com teoria. Volte com prova.",
-          "Naira esta na Biblioteca. Fale sobre cinzas ou rachaduras.",
-          "Ela vai escrever quando tiver certeza. Esperem os dois."
-        ],
-        "onComplete": [
-          "Entao e isso... nao foi so a terra se mexendo.",
-          "Ha mao antiga por tras dessas cinzas. Algo foi despertado, nao derrubado.",
-          "Agora precisamos de prova fisica. Palavra nao sustenta decisao de guerra."
-        ]
-      },
-      "nextQuest": "quest_fortaleza_amuleto"
-    },
-    {
-      "identity": {
-        "id": "quest_fortaleza_amuleto",
-        "name": "O Amuleto das Runas",
-        "description": "Naira apontou o caminho, mas Maelis precisa de algo concreto nas maos. Vasculhe as areas abaladas em busca de um Amuleto de Osso com Runas Antigas e traga de volta.",
-        "category": "Main",
-        "difficulty": "Hard",
-        "chainId": "chain_fortaleza_abalada",
-        "chainOrder": 3
-      },
-      "npcs": {
-        "giverId": "npc_capita_maelis",
-        "giverName": "Capita Maelis",
-        "turnInId": "npc_capita_maelis",
-        "turnInName": "Capita Maelis"
-      },
-      "settings": {
-        "repeatable": false
-      },
-      "prerequisites": {
-        "questIds": ["quest_fortaleza_biblioteca"]
-      },
-      "objectives": [
-        {
-          "type": "Collect",
-          "description": "Encontre o Amuleto de Osso com Runas Antigas",
-          "itemType": "AmuletoOssoRunas",
-          "itemName": "Amuleto de Osso com Runas Antigas",
-          "required": 1,
-          "consumeOnComplete": true,
-          "locationHint": "Vasculhe ruinas, corpos e qualquer coisa que o terremoto deixou a mostra."
-        }
-      ],
-      "rewards": {
-        "gold": 1500,
-        "fame": 150,
+        "gold": 50,
+        "fame": 10,
         "items": [
           {
-            "type": "PergaminhoRaroFortaleza",
-            "name": "Pergaminho Raro da Fortaleza",
+            "type": "Backpack",
+            "name": "Mochila",
             "amount": 1
           }
         ]
       },
       "dialogue": {
         "onAccept": [
-          "Naira confirmou: isso nao e natural. As rachaduras, as cinzas, algo foi despertado.",
-          "Mas eu nao movo um unico guarda com base em palavras. Preciso de prova.",
-          "Voce vai atras dela.",
-          "Naira mencionou um Amuleto de Osso com Runas Antigas. Vasculhe as areas abaladas.",
-          "Ruinas, corpos, o que for preciso. Quando estiver segurando nas maos, volte.",
-          "Nao volte com historia. Volte com o amuleto.",
-          "E tome cuidado. O que derrubou pedra pode ainda estar de pe la dentro."
+          "Você precisa de comida. Sem isso, o resto não importa.",
+          "Maçãs você encontra nas árvores pela cidade. Pão, compra do padeiro na praça.",
+          "Traga pra mim pra eu saber que você entendeu como funciona."
         ],
         "onProgress": [
-          "Voce nao tem o amuleto.",
-          "Vasculhe ruinas, corpos, qualquer coisa que o terremoto deixou a mostra.",
-          "O Amuleto de Osso com Runas Antigas esta la. Eu preciso dele aqui."
+          "Ainda falta comida. Cinco maçãs e três pães.",
+          "Árvores pela cidade e padeiro na praça."
         ],
         "onComplete": [
-          "Isso... e real. O tipo de coisa que faz cidades cairem e historias nascerem.",
-          "Agora eu posso mandar gente para o lugar certo, pelo motivo certo.",
-          "Voce fez a parte dificil. Por enquanto, descanse.",
-          "Pegue. E se pretende continuar vivo nessa cidade, fique por perto.",
-          "Quando eu precisar de novo, e vou precisar, espero ouvir voce bater nessa porta."
+          "Isso. Guarde essa comida com você. Coma quando sua vida estiver baixa ou quando sentir fome.",
+          "Pegue essa mochila também. Vai precisar de espaço.",
+          "Agora, comida mantém você vivo no dia a dia. Mas se você se machucar, vai precisar de outra coisa."
         ]
       },
-      "completionMessage": "Voce completou a cadeia de missoes da Fortaleza Abalada!"
+      "nextQuest": "quest_nh_bandagens"
+    },
+    {
+      "identity": {
+        "id": "quest_nh_bandagens",
+        "name": "Saber se Curar",
+        "description": "Comida te mantém vivo. Bandagens te mantém de pé. Aprenda a conseguir ataduras.",
+        "category": "Tutorial",
+        "difficulty": "Trivial",
+        "chainId": "chain_new_haven_tutorial",
+        "chainOrder": 3
+      },
+      "npcs": {
+        "giverId": "npc_guide_newhaven",
+        "giverName": "Marcus, o Guia",
+        "turnInId": "npc_healer_newhaven",
+        "turnInName": "Helena, a Curandeira"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": [
+          "quest_nh_comida"
+        ]
+      },
+      "objectives": [
+        {
+          "type": "TalkTo",
+          "description": "Fale com Helena, a Curandeira",
+          "targetNpcId": "npc_healer_newhaven",
+          "targetNpcName": "Helena, a Curandeira",
+          "required": 1,
+          "locationHint": "Helena fica na tenda de cura, perto do portão sul."
+        },
+        {
+          "type": "Collect",
+          "description": "Colete 10 Ataduras",
+          "itemType": "Bandage",
+          "itemName": "Atadura",
+          "required": 10,
+          "consumeOnComplete": false,
+          "locationHint": "Helena vende ataduras. Você também pode fazer com tecido no tear."
+        }
+      ],
+      "rewards": {
+        "gold": 75,
+        "fame": 10,
+        "items": [
+          {
+            "type": "Torch",
+            "name": "Tocha",
+            "amount": 2
+          }
+        ],
+        "skillGains": [
+          {
+            "skill": "Healing",
+            "amount": 0.5
+          }
+        ]
+      },
+      "dialogue": {
+        "onAccept": [
+          "Comida resolve fome. Mas se um bicho te morder, você precisa de ataduras.",
+          "Procure Helena, a curandeira. Fica perto do portão sul.",
+          "Ela vai te ensinar o básico e vender o que você precisar."
+        ],
+        "onProgress": [
+          "Você já falou com Helena? Precisa de dez ataduras.",
+          "Compra dela ou faz no tear se tiver tecido."
+        ],
+        "onComplete": [
+          "Bom. Você tem comida pra se manter e ataduras pra se curar.",
+          "Pegue essas tochas. Se for explorar longe, vai precisar de luz.",
+          "Agora você tá pronto pra sair da cidade."
+        ]
+      },
+      "nextQuest": "quest_nh_primeira_caca"
+    },
+    {
+      "identity": {
+        "id": "quest_nh_primeira_caca",
+        "name": "Primeira Caçada",
+        "description": "Você tem comida e bandagens. Agora aprenda a lutar. Comece pelos animais pequenos nos campos ao redor de New Haven.",
+        "category": "Tutorial",
+        "difficulty": "Easy",
+        "chainId": "chain_new_haven_tutorial",
+        "chainOrder": 4
+      },
+      "npcs": {
+        "giverId": "npc_healer_newhaven",
+        "giverName": "Helena, a Curandeira",
+        "turnInId": "npc_guide_newhaven",
+        "turnInName": "Marcus, o Guia"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": [
+          "quest_nh_bandagens"
+        ]
+      },
+      "objectives": [
+        {
+          "type": "Kill",
+          "description": "Mate 3 Coelhos",
+          "targetType": "Rabbit",
+          "targetName": "Coelho",
+          "required": 3,
+          "locationHint": "Coelhos ficam nos campos ao norte da cidade."
+        },
+        {
+          "type": "Kill",
+          "description": "Mate 2 Galinhas",
+          "targetType": "Chicken",
+          "targetName": "Galinha",
+          "required": 2,
+          "locationHint": "Galinhas ficam perto das fazendas ao leste."
+        }
+      ],
+      "rewards": {
+        "gold": 150,
+        "fame": 25,
+        "items": [
+          {
+            "type": "Longsword",
+            "name": "Espada Longa",
+            "amount": 1
+          }
+        ],
+        "skillGains": [
+          {
+            "skill": "Swords",
+            "amount": 0.5
+          },
+          {
+            "skill": "Tactics",
+            "amount": 0.5
+          }
+        ]
+      },
+      "dialogue": {
+        "onAccept": [
+          "Marcus me pediu pra te mandar pros campos quando você tivesse pronto.",
+          "Você tem comida e ataduras. Tá pronto.",
+          "Vai pros campos ao norte, mata uns coelhos. Depois pega umas galinhas perto das fazendas.",
+          "Nada perigoso. É só pra você sentir como é lutar."
+        ],
+        "onProgress": [
+          "Ainda faltam bichos. Coelhos ao norte, galinhas nas fazendas.",
+          "Use as ataduras se precisar."
+        ],
+        "onComplete": [
+          "Voltou inteiro. Bom sinal.",
+          "Pegue essa espada. Você vai precisar de algo melhor que os punhos pro que vem depois.",
+          "Agora que você sabe o básico, tem uns lugares fora da cidade que precisam de atenção."
+        ]
+      },
+      "nextQuest": "quest_nh_exploracao"
+    },
+    {
+      "identity": {
+        "id": "quest_nh_exploracao",
+        "name": "Além das Muralhas",
+        "description": "Marcus quer que você conheça os arredores de New Haven. Visite a mina abandonada ao oeste e o acampamento de lenhadores ao sul.",
+        "category": "Tutorial",
+        "difficulty": "Easy",
+        "chainId": "chain_new_haven_tutorial",
+        "chainOrder": 5
+      },
+      "npcs": {
+        "giverId": "npc_guide_newhaven",
+        "giverName": "Marcus, o Guia",
+        "turnInId": "npc_guide_newhaven",
+        "turnInName": "Marcus, o Guia"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": [
+          "quest_nh_primeira_caca"
+        ]
+      },
+      "objectives": [
+        {
+          "type": "TalkTo",
+          "description": "Fale com o Minerador Garth na Mina Abandonada",
+          "targetNpcId": "npc_minerador_garth",
+          "targetNpcName": "Minerador Garth",
+          "required": 1,
+          "locationHint": "A mina fica a oeste da cidade, subindo a trilha de pedra."
+        },
+        {
+          "type": "TalkTo",
+          "description": "Fale com a Lenhadora Tessa no Acampamento",
+          "targetNpcId": "npc_lenhadora_tessa",
+          "targetNpcName": "Lenhadora Tessa",
+          "required": 1,
+          "locationHint": "O acampamento de lenhadores fica ao sul, depois da ponte de madeira."
+        }
+      ],
+      "rewards": {
+        "gold": 100,
+        "fame": 20,
+        "items": [
+          {
+            "type": "Pickaxe",
+            "name": "Picareta",
+            "amount": 1
+          },
+          {
+            "type": "Hatchet",
+            "name": "Machadinha",
+            "amount": 1
+          }
+        ]
+      },
+      "dialogue": {
+        "onAccept": [
+          "Você já sabe comer, se curar e lutar. Agora precisa conhecer o terreno.",
+          "A oeste tem uma mina. Fala com Garth lá — ele sabe o que tem embaixo da terra.",
+          "Ao sul tem um acampamento de lenhadores. Tessa comanda. Fala com ela também.",
+          "Conhecer os lugares e as pessoas é tão importante quanto saber lutar."
+        ],
+        "onProgress": [
+          "Faltou visitar alguém. Garth na mina a oeste, Tessa no acampamento ao sul."
+        ],
+        "onComplete": [
+          "Agora você conhece os arredores. Mina, floresta, campos.",
+          "Pegue essa picareta e essa machadinha. Se precisar de recurso, sabe onde ir.",
+          "Agora falta uma coisa: enfrentar algo que revida de verdade."
+        ]
+      },
+      "nextQuest": "quest_nh_ameaca_real"
+    },
+    {
+      "identity": {
+        "id": "quest_nh_ameaca_real",
+        "name": "Ameaça Real",
+        "description": "Garth relatou lobos rondando a entrada da mina. Tessa viu rastros de lobo na trilha sul. Elimine a ameaça antes que ataque os trabalhadores.",
+        "category": "Tutorial",
+        "difficulty": "Normal",
+        "chainId": "chain_new_haven_tutorial",
+        "chainOrder": 6
+      },
+      "npcs": {
+        "giverId": "npc_guide_newhaven",
+        "giverName": "Marcus, o Guia",
+        "turnInId": "npc_guide_newhaven",
+        "turnInName": "Marcus, o Guia"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": [
+          "quest_nh_exploracao"
+        ]
+      },
+      "objectives": [
+        {
+          "type": "Kill",
+          "description": "Mate 4 Lobos",
+          "targetType": "GreyWolf",
+          "targetName": "Lobo Cinzento",
+          "required": 4,
+          "locationHint": "Lobos aparecem entre a mina e o acampamento de lenhadores."
+        },
+        {
+          "type": "Collect",
+          "description": "Colete 4 Peles de Lobo",
+          "itemType": "Hides",
+          "itemName": "Pele de Lobo",
+          "required": 4,
+          "consumeOnComplete": true,
+          "locationHint": "Os lobos largam peles ao morrer. Traga como prova.",
+          "fromMobTypes": [
+            "GreyWolf",
+            "Lobo",
+            "Wolf"
+          ],
+          "dropChance": 100
+        }
+      ],
+      "rewards": {
+        "gold": 300,
+        "fame": 50,
+        "items": [
+          {
+            "type": "StuddedChest",
+            "name": "Peitoral de Couro Reforçado",
+            "amount": 1
+          },
+          {
+            "type": "Bandage",
+            "name": "Atadura",
+            "amount": 20
+          }
+        ],
+        "skillGains": [
+          {
+            "skill": "Swords",
+            "amount": 1.0
+          },
+          {
+            "skill": "Tactics",
+            "amount": 1.0
+          },
+          {
+            "skill": "Healing",
+            "amount": 0.5
+          }
+        ]
+      },
+      "dialogue": {
+        "onAccept": [
+          "Garth mandou recado: lobos estão rondando a mina.",
+          "Tessa viu rastros na trilha sul também.",
+          "Coelhos e galinhas era treino. Lobos é sério. Eles mordem de volta.",
+          "Mate quatro. Traga as peles como prova.",
+          "Use as ataduras. Use a comida. É pra isso que você juntou tudo."
+        ],
+        "onProgress": [
+          "Ainda tem lobo solto. Quatro lobos, quatro peles.",
+          "Eles ficam entre a mina e o acampamento."
+        ],
+        "onComplete": [
+          "Quatro peles. Bom trabalho.",
+          "Pegue esse peitoral. Você vai precisar de proteção real agora.",
+          "E mais ataduras. Sempre mais ataduras.",
+          "Escuta. Você já sabe o que New Haven pode te ensinar.",
+          "Tem um lugar mais ao norte. A Fortaleza. Gente séria, problemas sérios.",
+          "Se você quer ir além, procure a Capitã Maelis. Mas precisa do Selo da Fortaleza pra entrar.",
+          "O ferreiro da praça faz selos pra quem provou seu valor. Fala com ele."
+        ]
+      },
+      "nextQuest": "quest_nh_selo"
+    },
+    {
+      "identity": {
+        "id": "quest_nh_selo",
+        "name": "Selo de Passagem",
+        "description": "Para entrar na Fortaleza você precisa de um Selo. O ferreiro Dorik pode fazer um, mas precisa de materiais.",
+        "category": "Tutorial",
+        "difficulty": "Normal",
+        "chainId": "chain_new_haven_tutorial",
+        "chainOrder": 7
+      },
+      "npcs": {
+        "giverId": "npc_guide_newhaven",
+        "giverName": "Marcus, o Guia",
+        "turnInId": "npc_ferreiro_dorik",
+        "turnInName": "Ferreiro Dorik"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": [
+          "quest_nh_ameaca_real"
+        ]
+      },
+      "objectives": [
+        {
+          "type": "TalkTo",
+          "description": "Fale com o Ferreiro Dorik",
+          "targetNpcId": "npc_ferreiro_dorik",
+          "targetNpcName": "Ferreiro Dorik",
+          "required": 1,
+          "locationHint": "Dorik trabalha na forja perto da praça central."
+        },
+        {
+          "type": "Collect",
+          "description": "Colete 10 Minérios de Ferro",
+          "itemType": "IronOre",
+          "itemName": "Minério de Ferro",
+          "required": 10,
+          "consumeOnComplete": true,
+          "locationHint": "Minere na mina do Garth a oeste. Use a picareta."
+        },
+        {
+          "type": "Collect",
+          "description": "Colete 5 Tábuas de Madeira",
+          "itemType": "Board",
+          "itemName": "Tábua de Madeira",
+          "required": 5,
+          "consumeOnComplete": true,
+          "locationHint": "Corte árvores no acampamento da Tessa ao sul. Use a machadinha."
+        }
+      ],
+      "rewards": {
+        "gold": 200,
+        "fame": 30,
+        "items": [
+          {
+            "type": "SeloFortaleza",
+            "name": "Selo da Fortaleza",
+            "amount": 1
+          }
+        ],
+        "skillGains": [
+          {
+            "skill": "Mining",
+            "amount": 1.0
+          },
+          {
+            "skill": "Lumberjacking",
+            "amount": 1.0
+          }
+        ]
+      },
+      "dialogue": {
+        "onAccept": [
+          "Dorik é o ferreiro da praça. Ele faz os selos de passagem.",
+          "Mas não faz de graça. Precisa de material.",
+          "Ferro da mina e madeira do acampamento. Agora você sabe onde ficam.",
+          "Leva o material pro Dorik. Ele faz o selo."
+        ],
+        "onProgress": [
+          "Dorik precisa de dez minérios de ferro e cinco tábuas.",
+          "Mina a oeste, acampamento ao sul. Você já conhece o caminho."
+        ],
+        "onComplete": [
+          "Selo pronto. Agora você pode entrar na Fortaleza.",
+          "Procure a Capitã Maelis. Mostre o selo na entrada.",
+          "O que vem depois é problema dela. Boa sorte."
+        ]
+      },
+      "completionMessage": "Você completou o Tutorial de New Haven. A Fortaleza espera ao norte."
     }
   ]
 }

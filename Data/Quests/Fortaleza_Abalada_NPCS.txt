@@ -1,29 +1,147 @@
-[addquestnpc Capita Maelis
+================================================================================
+ ROTEIRO DE CRIAÇÃO DOS NPCs DE QUEST
+ Sistema de Quests — DiamanteAzul UO
+================================================================================
+
+COMO USAR
+---------
+1. Entre no jogo com uma conta GameMaster (ou superior).
+2. Vá até o local onde o NPC deve ficar.
+3. Cole cada linha deste arquivo no chat, UMA POR VEZ, na ordem.
+   Cada [addquestnpc pede um clique no chão; cada [questnpcset pede um
+   clique no NPC recém-criado.
+
+POR QUE O "npcid" É OBRIGATÓRIO
+-------------------------------
+Os JSON em Data/Quests identificam os NPCs por um ID estável
+("npc_capita_maelis", "npc_enfermeira_sera"...). O serial do NPC muda a cada
+respawn e o nome de exibição pode ser editado, então sem o npcid:
+
+  - os objetivos "Fale com..." nunca recebem progresso;
+  - a entrega da quest não é reconhecida;
+  - as cartas lacradas (grantItems) nunca são entregues.
+
+Definir o npcid com [questnpcset npcid <id> marca o NPC como giver e
+ASSOCIA AUTOMATICAMENTE todas as quests cujo giverId/turnInId seja esse id —
+não é mais preciso usar [questnpcaddquest uma a uma.
+
+ATENÇÃO — ORDEM
+---------------
+Rode [questreload ANTES de definir os npcid, para que o repositório já tenha
+as quests carregadas e a associação automática funcione.
+
+    [questreload
+
+================================================================================
+ FORTALEZA ABALADA
+================================================================================
+
+--- Capitã Maelis (giver e turn-in das 3 quests do arco) --------------------
+[addquestnpc Capitã Maelis
+[questnpcset npcid npc_capita_maelis
 [questnpcset bio Sou Maelis. Servi Valenar desde os dezesseis, sem pedir licença.
 [questnpcset location Aqui nascem ordens, marchas e preces. A Fortaleza é Esperança.
-[questnpcaddquest quest_fortaleza_conhecendo
-[questnpcaddquest quest_fortaleza_biblioteca
-[questnpcaddquest quest_fortaleza_amuleto
 
-[questreset quest_fortaleza_conhecendo
+Verificação (opcional):
+[questnpctalk
 
-[questgive quest_fortaleza_biblioteca
-
-
-
+--- Mestre de Docas Olin (TalkTo + entrega a Carta Lacrada de Olin) ---------
 [addquestnpc Mestre de Docas Olin
+[questnpcset npcid npc_mestre_docas_olin
 [questnpcset bio Sou Olin. Trinta anos no cais. Perdi dedos, ganhei cicatrizes.
-[questnpcset location No Porto da Bala chegam suprimentos e pressagios do mar.
+[questnpcset location No Porto da Bala chegam suprimentos e presságios do mar.
 
-
+--- Enfermeira Sera (TalkTo + quest chain da Enfermaria) --------------------
 [addquestnpc Enfermeira Sera
+[questnpcset npcid npc_enfermeira_sera
 [questnpcset bio Sou Sera. Perdi quem não devia. Aprendo com cada um ainda.
 [questnpcset location Aqui a guerra tem rosto. Trato feridas do corpo e da alma.
 
+--- Cozinheira Brina (TalkTo + entrega a Carta Lacrada de Brina) ------------
 [addquestnpc Cozinheira Brina
-[questnpcset bio Sou Brina. Doze anos aqui. Vi generais cairem, a sopa não.
+[questnpcset npcid npc_cozinheira_brina
+[questnpcset bio Sou Brina. Doze anos aqui. Vi generais caírem, a sopa não.
 [questnpcset location Fome derruba mais que espada. Daqui sai o que sustenta a guarda.
 
+--- Erudita Naira (TalkTo + entrega a Carta Lacrada de Naira) ---------------
 [addquestnpc Erudita Naira
+[questnpcset npcid npc_erudita_naira
 [questnpcset bio Sou Naira. A escriba da cidade, sempre vivi dentro da biblioteca.
 [questnpcset location A biblioteca é a escola dessa cidade, se comporte!
+
+================================================================================
+ TUTORIAL DE NEW HAVEN
+================================================================================
+
+--- Marcus, o Guia (giver/turn-in da maior parte do tutorial) ---------------
+[addquestnpc Marcus, o Guia
+[questnpcset npcid npc_guide_newhaven
+[questnpcset bio Sou Marcus. Fico perto do banco pra ajudar quem chega.
+[questnpcset location New Haven é pequena, mas tem tudo que você precisa pra começar.
+
+--- Helena, a Curandeira (TalkTo e turn-in de "Saber se Curar") -------------
+[addquestnpc Helena, a Curandeira
+[questnpcset npcid npc_healer_newhaven
+[questnpcset bio Sou Helena. Ensino o básico pra quem quer voltar inteiro.
+[questnpcset location A tenda de cura fica perto do portão sul.
+
+--- Minerador Garth (TalkTo de "Além das Muralhas") -------------------------
+[addquestnpc Minerador Garth
+[questnpcset npcid npc_minerador_garth
+[questnpcset bio Sou Garth. Se tem ferro embaixo dessa pedra, eu acho.
+[questnpcset location A mina abandonada fica a oeste, subindo a trilha de pedra.
+
+--- Lenhadora Tessa (TalkTo de "Além das Muralhas") -------------------------
+[addquestnpc Lenhadora Tessa
+[questnpcset npcid npc_lenhadora_tessa
+[questnpcset bio Sou Tessa. Madeira boa não cai do céu, cai do machado.
+[questnpcset location O acampamento fica ao sul, depois da ponte de madeira.
+
+--- Ferreiro Dorik (TalkTo e turn-in de "Selo de Passagem") -----------------
+[addquestnpc Ferreiro Dorik
+[questnpcset npcid npc_ferreiro_dorik
+[questnpcset bio Sou Dorik. Faço os selos de passagem. Não faço de graça.
+[questnpcset location A forja fica perto da praça central.
+
+================================================================================
+ VERIFICAÇÃO FINAL
+================================================================================
+
+Lista tudo que o repositório carregou e os avisos de validação:
+[questreload
+[questlist
+[questdiag
+
+Detalhe de uma quest específica:
+[questinfo quest_fortaleza_conhecendo
+
+Teste rápido da cadeia da Fortaleza (apenas para validar o fluxo;
+use [questreset depois para devolver o jogador ao estado normal):
+[questgive quest_fortaleza_conhecendo
+[questreset quest_fortaleza_conhecendo
+
+================================================================================
+ COMANDOS DISPONÍVEIS
+================================================================================
+
+ [questreload                 recarrega os JSON de Data/Quests
+ [questlist                   lista ids/nomes/estado de todas as quests
+ [questinfo <id>              detalha uma quest (objetivos, pré-requisitos)
+ [questdiag                   diagnóstico completo: o que está impossível e por quê
+ [criarquest                  cria uma quest nova pelo gump
+ [editarquest                 edita uma quest já existente pelo gump
+ [addquestnpc <nome>          cria um QuestNPC no local clicado
+ [questnpcset npcid <id>      vincula o NPC ao id usado nos JSON (auto-associa quests)
+ [questnpcset bio <texto>     biografia do NPC
+ [questnpcset location <txt>  descrição do local
+ [questnpcset range <n>       alcance de interação
+ [questnpcset speechhue <n>   cor da fala
+ [questnpcaddquest <id>       associa uma quest manualmente (valida o id)
+ [questnpctalk                força o início da conversa com o NPC clicado
+ [queststart <id>             inicia a quest para o jogador-alvo (GM)
+ [questcomplete <id>          completa à força (GM)
+ [questfail <id>              falha à força (GM)
+ [questprogress <id>          mostra o progresso do jogador-alvo (GM)
+ [questreset <id>             zera o histórico do jogador-alvo (Admin)
+ [questgive <id>              dá a quest ignorando pré-requisitos (GM)
+ [missoes / [quests           abre o rastreador de quests (jogador)
