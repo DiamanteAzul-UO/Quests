@@ -1,0 +1,299 @@
+{
+  "_meta": {
+    "version": "1.1.0",
+    "description": "Quest Chain da Enfermaria - Enfermeira Sera",
+    "author": "Alexsander - ElfuDaLuz",
+    "created": "2026"
+  },
+
+  "Quests": [
+    {
+      "identity": {
+        "id": "quest_enfermaria_ataduras",
+        "name": "Ataduras da Enfermaria",
+        "description": "A Enfermeira Sera precisa de ataduras para manter os feridos tratados. Consiga algodão de fazendas ou comerciantes e peça a um artesão costureiro para confeccionar as ataduras.",
+        "category": "Side",
+        "difficulty": "Easy",
+        "chainId": "chain_enfermaria_suprimentos",
+        "chainOrder": 1
+      },
+      "npcs": {
+        "giverId": "npc_enfermeira_sera",
+        "giverName": "Enfermeira Sera",
+        "turnInId": "npc_enfermeira_sera",
+        "turnInName": "Enfermeira Sera"
+      },
+      "settings": {
+        "repeatable": false,
+        "cooldownHours": 0
+      },
+      "objectives": [
+        {
+          "type": "Collect",
+          "description": "Traga 50 Ataduras",
+          "itemType": "Bandage",
+          "itemName": "Ataduras",
+          "required": 50,
+          "consumeOnComplete": true,
+          "locationHint": "Pegue algodão de alguma fazenda ou compre de um comerciante. Peça a algum Artesão costureiro para lhe ajudar a confeccionar."
+        }
+      ],
+      "rewards": {
+        "gold": 0,
+        "fame": 25,
+        "items": [
+          {
+            "type": "HealPotion",
+            "name": "Poção de Cura",
+            "amount": 2
+          }
+        ]
+      },
+      "dialogue": {
+        "onOffer": [
+          "*ergue os olhos cansados de um paciente que acabou de enfaixar*",
+          "Você veio ajudar ou só olhar?",
+          "Os feridos não param de chegar e as ataduras estão acabando.",
+          "Preciso de 50 ataduras. Não importa como conseguir.",
+          "Algodão de fazenda, comerciante, o que for. Depois peça a um costureiro para fazer."
+        ],
+        "onAccept": [
+          "*volta a atenção para o paciente, mas acena com a cabeça*",
+          "Vá. Quanto mais rápido voltar, menos gente sangra sem curativo.",
+          "E não volte com menos de 50. Aqui não sobra nada."
+        ],
+        "onProgress": [
+          "*limpa as mãos em um pano já manchado de sangue*",
+          "Ainda não tem as 50 ataduras?",
+          "Fazendas têm algodão. Comerciantes vendem. Costureiros fazem.",
+          "Não é difícil — só dá trabalho. Volte quando tiver."
+        ],
+        "onComplete": [
+          "*pega as ataduras e já começa a organizar na prateleira*",
+          "Isso vai durar... uma semana, se tivermos sorte.",
+          "*entrega duas poções de um armário trancado*",
+          "Tome. Poções de cura. Feitas aqui mesmo.",
+          "Se quiser continuar ajudando, tenho mais trabalho. Sempre tenho."
+        ]
+      },
+      "nextQuest": "quest_enfermaria_raiz"
+    },
+
+    {
+      "identity": {
+        "id": "quest_enfermaria_raiz",
+        "name": "Raiz da Enfermaria",
+        "description": "Sera precisa de Ginseng para preparar antídotos. Compre, plante, ou encontre em fazendas tomadas por bandidos — dizem que cofres no cemitério também guardam ervas antigas.",
+        "category": "Side",
+        "difficulty": "Easy",
+        "chainId": "chain_enfermaria_suprimentos",
+        "chainOrder": 2
+      },
+      "npcs": {
+        "giverId": "npc_enfermeira_sera",
+        "giverName": "Enfermeira Sera",
+        "turnInId": "npc_enfermeira_sera",
+        "turnInName": "Enfermeira Sera"
+      },
+      "settings": {
+        "repeatable": false,
+        "cooldownHours": 0
+      },
+      "prerequisites": {
+        "questIds": ["quest_enfermaria_ataduras"]
+      },
+      "objectives": [
+        {
+          "type": "Collect",
+          "description": "Traga 10 Ginseng",
+          "itemType": "Ginseng",
+          "itemName": "Ginseng",
+          "required": 10,
+          "consumeOnComplete": true,
+          "locationHint": "Compre, plante, ou adquira de uma fazenda tomada por bandidos. Cofres no cemitério também podem guardar ervas antigas."
+        }
+      ],
+      "rewards": {
+        "gold": 0,
+        "fame": 30,
+        "items": [
+          {
+            "type": "CurePotion",
+            "name": "Poção de Antídoto",
+            "amount": 2
+          }
+        ]
+      },
+      "dialogue": {
+        "onOffer": [
+          "*mistura algo em um pilão, o cheiro forte de ervas no ar*",
+          "Voltou. Bom.",
+          "Agora preciso de raízes. Ginseng, especificamente.",
+          "Sem ele, não preparo antídoto. E veneno mata mais rápido que espada por aqui.",
+          "Dez raízes. Compre se tiver ouro, plante se tiver tempo.",
+          "Ou vá até aquela fazenda que os bandidos tomaram. Eles não sabem o valor do que pisam.",
+          "*volta a socar as ervas*",
+          "Dizem que cofres antigos no cemitério guardam ervas secas. Se tiver coragem..."
+        ],
+        "onAccept": [
+          "*não para de trabalhar, mas o tom suaviza um pouco*",
+          "Ginseng. Dez raízes. Não traga menos.",
+          "E tome cuidado se for ao cemitério. Os mortos não mordem, mas o que vive lá... morde."
+        ],
+        "onProgress": [
+          "*cheira o ar quando você se aproxima*",
+          "Não sinto Ginseng em você.",
+          "Fazendas, comerciantes, cemitério. Escolha um caminho e siga.",
+          "Dez raízes. Volte quando tiver."
+        ],
+        "onComplete": [
+          "*pega as raízes e examina cada uma contra a luz*",
+          "Frescas. Bem cuidadas. Você sabe escolher.",
+          "*guarda em um pote de vidro e lacra com cera*",
+          "Com isso, preparo antídotos para o mês inteiro.",
+          "*entrega duas poções de um verde turvo*",
+          "Antídotos. Guarde bem — veneno não avisa quando vem.",
+          "Você tem jeito pra isso. Se quiser aprender de verdade... volte. Tenho uma proposta."
+        ]
+      },
+      "nextQuest": "quest_enfermaria_classe_curandeiro"
+    },
+
+    {
+      "identity": {
+        "id": "quest_enfermaria_classe_curandeiro",
+        "name": "Caminho do Curandeiro",
+        "description": "Sera reconhece seu potencial e oferece ensinar as técnicas de curandeiro. Mas primeiro, a enfermaria precisa de suprimentos: roupas para os pacientes e ataduras em grande quantidade.",
+        "category": "Main",
+        "difficulty": "Hard",
+        "chainId": "chain_enfermaria_suprimentos",
+        "chainOrder": 3
+      },
+      "npcs": {
+        "giverId": "npc_enfermeira_sera",
+        "giverName": "Enfermeira Sera",
+        "turnInId": "npc_enfermeira_sera",
+        "turnInName": "Enfermeira Sera"
+      },
+      "settings": {
+        "repeatable": false,
+        "cooldownHours": 0
+      },
+      "prerequisites": {
+        "questIds": ["quest_enfermaria_raiz"]
+      },
+      "objectives": [
+        {
+          "type": "Collect",
+          "description": "Traga 10 Camisas Longas",
+          "itemType": "LongShirt",
+          "itemName": "Camisa Longa",
+          "required": 10,
+          "consumeOnComplete": true,
+          "locationHint": "Costureiros confeccionam camisas com tecido. Procure um artesão ou compre prontas."
+        },
+        {
+          "type": "Collect",
+          "description": "Traga 10 Calças Longas",
+          "itemType": "LongPants",
+          "itemName": "Calça Longa",
+          "required": 10,
+          "consumeOnComplete": true,
+          "locationHint": "Calças são básicas para qualquer costureiro. Encomende ou compre."
+        },
+        {
+          "type": "Collect",
+          "description": "Traga 10 Sapatos",
+          "itemType": "Shoes",
+          "itemName": "Sapatos",
+          "required": 10,
+          "consumeOnComplete": true,
+          "locationHint": "Sapateiros fazem sapatos com couro. Procure um artesão especializado."
+        },
+        {
+          "type": "Collect",
+          "description": "Traga 5 Aventais",
+          "itemType": "FullApron",
+          "itemName": "Avental",
+          "required": 5,
+          "consumeOnComplete": true,
+          "locationHint": "Aventais protegem as roupas durante o trabalho. Costureiros podem fazer."
+        },
+        {
+          "type": "Collect",
+          "description": "Traga 500 Ataduras",
+          "itemType": "Bandage",
+          "itemName": "Ataduras",
+          "required": 500,
+          "consumeOnComplete": true,
+          "locationHint": "Vai precisar de muito algodão. Organize-se com fazendeiros e costureiros."
+        }
+      ],
+      "rewards": {
+        "gold": 0,
+        "fame": 200,
+        "classUnlock": {
+          "type": "Curandeiro",
+          "name": "Classe de Curandeiro"
+        },
+        "skills": [
+          {
+            "skillName": "Healing",
+            "bonus": 10.0
+          }
+        ]
+      },
+      "dialogue": {
+        "onOffer": [
+          "*para o que está fazendo e olha diretamente para você*",
+          "Você voltou mais vezes do que a maioria. Isso significa algo.",
+          "Tenho observado. Você tem mãos firmes e não vira o rosto pro sangue.",
+          "*cruza os braços*",
+          "Posso te ensinar. Técnicas de curandeiro. Um caminho de verdade.",
+          "Mas não dou conhecimento de graça. A enfermaria precisa de suprimentos.",
+          "*aponta para as prateleiras quase vazias*",
+          "Dez camisas longas. Dez calças. Dez sapatos. Cinco aventais.",
+          "E quinhentas ataduras. Sim, quinhentas.",
+          "Com isso, mantenho pacientes vestidos e tratados por meses.",
+          "Quando trouxer tudo — e só quando trouxer tudo — eu ensino o que sei."
+        ],
+        "onAccept": [
+          "*volta ao trabalho, mas há um quase-sorriso no canto da boca*",
+          "Vai dar trabalho. Muito trabalho.",
+          "Camisas, calças, sapatos — costureiros fazem. Aventais também.",
+          "As ataduras você já sabe: algodão e um bom artesão.",
+          "Não volte pela metade. Volte completo ou não volte.",
+          "Quando estiver pronto, estarei aqui. Sempre estou."
+        ],
+        "onProgress": [
+          "*conta mentalmente o que você traz, depois balança a cabeça*",
+          "Ainda falta.",
+          "Dez camisas. Dez calças. Dez sapatos. Cinco aventais. Quinhentas ataduras.",
+          "*volta ao trabalho*",
+          "O caminho do curandeiro não é pra quem desiste no meio.",
+          "Volte quando tiver tudo. Não antes."
+        ],
+        "onComplete": [
+          "*para completamente. Pela primeira vez, você vê Sera sem fazer nada*",
+          "*examina cada item com cuidado, dobrando as roupas, contando as ataduras*",
+          "Completo. Você realmente trouxe tudo.",
+          "*guarda os suprimentos metodicamente, em silêncio*",
+          "*depois de um longo momento, vira-se para você*",
+          "Senta.",
+          "*aponta para um banquinho ao lado da mesa de trabalho*",
+          "Curar não é só enfaixar. É saber onde dói antes de perguntarem.",
+          "É ver o veneno antes do sintoma. A febre antes do suor.",
+          "*pega suas mãos e examina*",
+          "Mãos de quem trabalha. Bom.",
+          "*passa as próximas horas ensinando técnicas, pontos de pressão, ervas*",
+          "A partir de agora, você carrega conhecimento que salva vidas.",
+          "*levanta e volta ao trabalho, como se nada tivesse mudado*",
+          "Vá. Use o que aprendeu. E quando alguém sangrar na sua frente...",
+          "*olha por cima do ombro*",
+          "...não deixe sangrar."
+        ]
+      },
+      "completionMessage": "Você completou o Caminho do Curandeiro e desbloqueou a Classe de Curandeiro!"
+    }
+  ]
+}

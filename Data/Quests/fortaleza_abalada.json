@@ -1,0 +1,275 @@
+{
+  "_meta": {
+    "version": "1.1.0",
+    "description": "Quest Chain da Fortaleza - Capitã Maelis",
+    "author": "Alexsander - ElfuDaLuz",
+    "created": "2026"
+  },
+
+  "Quests": [
+    {
+      "identity": {
+        "id": "quest_fortaleza_conhecendo",
+        "name": "Conhecendo a Fortaleza",
+        "description": "A Capitã Maelis não entrega missão a quem não conhece o que protege. Fale com Olin nas Docas, Sera na Enfermaria e Brina no Refeitório — e traga uma carta lacrada de cada um.",
+        "category": "Main",
+        "difficulty": "Easy",
+        "chainId": "chain_fortaleza_abalada",
+        "chainOrder": 1
+      },
+      "npcs": {
+        "giverId": "npc_capita_maelis",
+        "giverName": "Capitã Maelis",
+        "turnInId": "npc_capita_maelis",
+        "turnInName": "Capitã Maelis"
+      },
+      "settings": {
+        "repeatable": false,
+        "cooldownHours": 0
+      },
+      "prerequisites": {
+        "requiredItems": ["SeloFortaleza"]
+      },
+      "objectives": [
+        {
+          "type": "TalkTo",
+          "description": "Fale com Olin nas Docas",
+          "targetNpcId": "npc_mestre_docas_olin",
+          "targetNpcName": "Mestre de Docas Olin",
+          "required": 1,
+          "locationHint": "Olin fica no cais da Fortaleza, entre caixas e cheiro de maresia."
+        },
+        {
+          "type": "TalkTo",
+          "description": "Fale com Sera na Enfermaria",
+          "targetNpcId": "npc_enfermeira_sera",
+          "targetNpcName": "Enfermeira Sera",
+          "required": 1,
+          "locationHint": "Sera cuida dos feridos que voltam da linha de frente."
+        },
+        {
+          "type": "TalkTo",
+          "description": "Fale com Brina no Refeitório",
+          "targetNpcId": "npc_cozinheira_brina",
+          "targetNpcName": "Cozinheira Brina",
+          "required": 1,
+          "locationHint": "Brina comanda a cozinha com mão firme e colher mais firme ainda."
+        },
+        {
+          "type": "Collect",
+          "description": "Obtenha a Carta Lacrada de Olin",
+          "itemType": "CartaLacradaOlin",
+          "itemName": "Carta Lacrada de Olin",
+          "required": 1,
+          "consumeOnComplete": true,
+          "locationHint": "Olin entregará a carta após ouvir que você veio a mando da Capitã."
+        },
+        {
+          "type": "Collect",
+          "description": "Obtenha a Carta Lacrada de Sera",
+          "itemType": "CartaLacradaSera",
+          "itemName": "Carta Lacrada de Sera",
+          "required": 1,
+          "consumeOnComplete": true,
+          "locationHint": "Sera escreve enquanto trabalha — peça a carta com paciência."
+        },
+        {
+          "type": "Collect",
+          "description": "Obtenha a Carta Lacrada de Brina",
+          "itemType": "CartaLacradaBrina",
+          "itemName": "Carta Lacrada de Brina",
+          "required": 1,
+          "consumeOnComplete": true,
+          "locationHint": "Brina lacra a carta com cera quente — não amasse."
+        }
+      ],
+      "rewards": {
+        "gold": 0,
+        "fame": 50
+      },
+      "dialogue": {
+        "onOffer": [
+          "*encara você de cima a baixo, o punho firme sobre o cabo da espada*",
+          "Veio procurar sentido? Vai encontrar trabalho primeiro.",
+          "Missão existe. Mas não dou missão a quem não entende o que protege.",
+          "Vá às Docas falar com Olin. Depois à Enfermaria com Sera. Depois ao Refeitório com Brina.",
+          "Traga uma carta lacrada de cada um. Sem atalhos."
+        ],
+        "onAccept": [
+          "*assente com um único movimento de queixo, sem sorrir*",
+          "Vá. Conheça a gente dessa Fortaleza — de verdade, não de passagem.",
+          "Quando tiver as três cartas, volte. Eu estarei aqui."
+        ],
+        "onProgress": [
+          "*cruza os braços, o olhar cortando mais que a espada ao lado*",
+          "Você ainda não trouxe as três provas.",
+          "Não volte com desculpa. Volte com carta.",
+          "Olin nas Docas. Sera na Enfermaria. Brina no Refeitório.",
+          "Cada um sabe o que eu preciso saber."
+        ],
+        "onComplete": [
+          "*pega as três cartas e as guarda dentro do peitoral da armadura, sem pressa*",
+          "Bom. Agora você viu gente, não só ruína.",
+          "Olin conta o que o mar esconde. Sera vê o que os homens não falam. Brina ouve o que ninguém percebe que diz.",
+          "Próximo passo: vá até a Biblioteca. Procure pela Erudita Naira.",
+          "Use as palavras certas — fale sobre cinzas e rachaduras. Ela vai entender."
+        ]
+      },
+      "nextQuest": "quest_fortaleza_biblioteca"
+    },
+
+    {
+      "identity": {
+        "id": "quest_fortaleza_biblioteca",
+        "name": "Segredos da Biblioteca",
+        "description": "Maelis precisa entender o que causou as cinzas e rachaduras após o terremoto. A Erudita Naira guarda registros que o Conselho prefere esquecer — consulte-a na Biblioteca e traga a resposta.",
+        "category": "Main",
+        "difficulty": "Normal",
+        "chainId": "chain_fortaleza_abalada",
+        "chainOrder": 2
+      },
+      "npcs": {
+        "giverId": "npc_capita_maelis",
+        "giverName": "Capitã Maelis",
+        "turnInId": "npc_capita_maelis",
+        "turnInName": "Capitã Maelis"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": ["quest_fortaleza_conhecendo"],
+        "requiredItems": ["SeloBiblioteca"]
+      },
+      "objectives": [
+        {
+          "type": "TalkTo",
+          "description": "Fale com a Erudita Naira na Biblioteca",
+          "targetNpcId": "npc_erudita_naira",
+          "targetNpcName": "Erudita Naira",
+          "required": 1,
+          "locationHint": "Naira estuda entre pilhas de tomos empoeirados. Não a interrompa sem motivo."
+        },
+        {
+          "type": "Collect",
+          "description": "Obtenha a Carta Lacrada de Naira",
+          "itemType": "CartaLacradaNaira",
+          "itemName": "Carta Lacrada de Naira",
+          "required": 1,
+          "consumeOnComplete": true,
+          "locationHint": "Mencione cinzas ou rachaduras para que Naira tome você a sério."
+        }
+      ],
+      "rewards": {
+        "gold": 0,
+        "fame": 75
+      },
+      "dialogue": {
+        "onOffer": [
+          "*apoia as mãos na mesa de mapas, o olhar fixo em você*",
+          "Agora que você conhece o pessoal, preciso que investigue algo mais fundo.",
+          "As cinzas e rachaduras que apareceram depois do terremoto — não são naturais. Eu sinto.",
+          "Vá até a Biblioteca. Procure pela Erudita Naira.",
+          "Ela guarda registros que o Conselho prefere enterrado. Traga a resposta dela para mim."
+        ],
+        "onAccept": [
+          "*endireita a postura, o tom mais baixo*",
+          "Naira sabe mais do que aparenta. E fala menos do que sabe.",
+          "Mencione cinzas ou rachaduras para chamar a atenção dela.",
+          "Volte com a carta lacrada. Não com resumo, não com interpretação — com a carta."
+        ],
+        "onProgress": [
+          "*franze o cenho, impaciente, sem erguer o tom*",
+          "Não volte com teoria. Volte com prova.",
+          "Naira está na Biblioteca. Fale sobre cinzas ou rachaduras.",
+          "Ela vai escrever quando tiver certeza. Esperem os dois."
+        ],
+        "onComplete": [
+          "*quebra o lacre da carta de Naira com o polegar, lendo cada linha devagar*",
+          "*o maxilar trava. Você vê a respiração dela mudar.*",
+          "Então é isso... não foi só a terra se mexendo.",
+          "Há mão antiga por trás dessas cinzas. Algo foi despertado — não derrubado.",
+          "Agora precisamos de prova física. Palavra não sustenta decisão de guerra."
+        ]
+      },
+      "nextQuest": "quest_fortaleza_amuleto"
+    },
+
+    {
+      "identity": {
+        "id": "quest_fortaleza_amuleto",
+        "name": "O Amuleto das Runas",
+        "description": "Naira apontou o caminho, mas Maelis precisa de algo concreto nas mãos. Vasculhe as áreas abaladas em busca de um Amuleto de Osso com Runas Antigas — e traga de volta.",
+        "category": "Main",
+        "difficulty": "Hard",
+        "chainId": "chain_fortaleza_abalada",
+        "chainOrder": 3
+      },
+      "npcs": {
+        "giverId": "npc_capita_maelis",
+        "giverName": "Capitã Maelis",
+        "turnInId": "npc_capita_maelis",
+        "turnInName": "Capitã Maelis"
+      },
+      "settings": {
+        "repeatable": false
+      },
+      "prerequisites": {
+        "questIds": ["quest_fortaleza_biblioteca"]
+      },
+      "objectives": [
+        {
+          "type": "Collect",
+          "description": "Encontre o Amuleto de Osso com Runas Antigas",
+          "itemType": "AmuletoOssoRunas",
+          "itemName": "Amuleto de Osso com Runas Antigas",
+          "required": 1,
+          "consumeOnComplete": true,
+          "locationHint": "Vasculhe ruínas, corpos e qualquer coisa que o terremoto deixou à mostra."
+        }
+      ],
+      "rewards": {
+        "gold": 1500,
+        "fame": 150,
+        "items": [
+          {
+            "type": "PergaminhoRaroFortaleza",
+            "name": "Pergaminho Raro da Fortaleza",
+            "amount": 1
+          }
+        ]
+      },
+      "dialogue": {
+        "onOffer": [
+          "*dobra a carta de Naira e a guarda dentro do peitoral da armadura*",
+          "Naira confirmou: isso não é natural. As rachaduras, as cinzas — algo foi despertado.",
+          "Mas eu não movo um único guarda com base em palavras. Preciso de prova.",
+          "Você vai atrás dela.",
+          "Naira mencionou um Amuleto de Osso com Runas Antigas. Vasculhe as áreas abaladas.",
+          "Ruínas, corpos, o que for preciso. Quando estiver segurando nas mãos, volte."
+        ],
+        "onAccept": [
+          "*vira de costas para o mapa antes que você termine de falar*",
+          "Não volte com história. Volte com o amuleto.",
+          "E tome cuidado — o que derrubou pedra pode ainda estar de pé lá dentro."
+        ],
+        "onProgress": [
+          "*bate com os nós dos dedos no escudo ao lado, uma vez, firme*",
+          "Você não tem o amuleto.",
+          "Vasculhe ruínas, corpos, qualquer coisa que o terremoto deixou à mostra.",
+          "O Amuleto de Osso com Runas Antigas está lá. Eu preciso dele aqui."
+        ],
+        "onComplete": [
+          "*pega o amuleto pela corrente, segurando longe do corpo, evitando tocar o osso*",
+          "*fica em silêncio por um momento, lendo as runas com o olhar de quem já viu coisa demais*",
+          "Isso... é real. O tipo de coisa que faz cidades caírem e histórias nascerem.",
+          "Agora eu posso mandar gente para o lugar certo, pelo motivo certo.",
+          "Você fez a parte difícil. Por enquanto, descanse.",
+          "*entrega um pergaminho enrolado e uma bolsa de moedas sem cerimônia*",
+          "Pegue. E se pretende continuar vivo nessa cidade, fique por perto.",
+          "Quando eu precisar de novo — e vou precisar — espero ouvir você bater nessa porta."
+        ]
+      }
+    }
+  ]
+}

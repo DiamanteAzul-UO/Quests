@@ -1,0 +1,58 @@
+Scripts/
+└── Custom/
+    └── QuestSystem/
+        ├── Core/
+        │   ├── QuestSystemConfig.cs
+        │   ├── QuestEnums.cs
+        │   └── QuestConstants.cs
+        ├── Data/
+        │   └── (futuras etapas)
+        ├── Managers/
+        │   └── (futuras etapas)
+        ├── Gumps/
+        │   └── (futuras etapas)
+        └── NPCs/
+            └── (futuras etapas)
+
+
+NPCBehavior - Regras de comportamento do NPC com o jogador
+
+triggerWords, farewellWords, acceptWords, declineWords, backWords
+Limites (maxInteractionRange, maxSimultaneousConversations, conversationTimeoutSeconds, inputTimeoutSeconds)
+Mensagens (onBusy, onOutOfRange, onTimeout, onInvalidInput)
+Sistema de conversa
+
+ConversationState - Estado da conversa ativa
+Gerenciamento de múltiplas conversas
+Timeout e cleanup
+Base do NPC de Quest
+
+Classe base para NPCs que dão quests
+Detecção de fala do jogador
+Sistema de interação
+
+[questgive quest_welcome_newhaven
+
+Comando	Descrição
+[addquestnpc <id>	Adiciona NPC de quest
+[queststart <id>	Inicia quest para jogador
+[questcomplete <id>	Completa quest
+[questfail <id>	Falha quest
+[questprogress <id> <obj> [amt]	Adiciona progresso
+[questactive	Lista quests ativas
+[questreset <id>	Reseta quest
+[questgive <id>	Dá quest (ignora prereqs)
+
+
+Me mostra o método UpdateProgress completo e como active.Status é calculado — 
+especificamente o ActiveQuest e como ele define quando fica ReadyToTurnIn. 
+Preciso ver se o status atualiza após o SyncCollectObjectives ser chamado.
+
+
+
+
+
+
+
+
+

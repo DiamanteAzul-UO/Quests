@@ -1,0 +1,29 @@
+[addquestnpc Capita Maelis
+[questnpcset bio Sou Maelis. Servi Valenar desde os dezesseis, sem pedir licença.
+[questnpcset location Aqui nascem ordens, marchas e preces. A Fortaleza é Esperança.
+[questnpcaddquest quest_fortaleza_conhecendo
+[questnpcaddquest quest_fortaleza_biblioteca
+[questnpcaddquest quest_fortaleza_amuleto
+
+[questreset quest_fortaleza_conhecendo
+
+[questgive quest_fortaleza_biblioteca
+
+
+
+[addquestnpc Mestre de Docas Olin
+[questnpcset bio Sou Olin. Trinta anos no cais. Perdi dedos, ganhei cicatrizes.
+[questnpcset location No Porto da Bala chegam suprimentos e pressagios do mar.
+
+
+[addquestnpc Enfermeira Sera
+[questnpcset bio Sou Sera. Perdi quem não devia. Aprendo com cada um ainda.
+[questnpcset location Aqui a guerra tem rosto. Trato feridas do corpo e da alma.
+
+[addquestnpc Cozinheira Brina
+[questnpcset bio Sou Brina. Doze anos aqui. Vi generais cairem, a sopa não.
+[questnpcset location Fome derruba mais que espada. Daqui sai o que sustenta a guarda.
+
+[addquestnpc Erudita Naira
+[questnpcset bio Sou Naira. A escriba da cidade, sempre vivi dentro da biblioteca.
+[questnpcset location A biblioteca é a escola dessa cidade, se comporte!
