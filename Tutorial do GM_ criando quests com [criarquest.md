@@ -1,235 +1,405 @@
-# Tutorial do GM: criando quests com `[criarquest`
+# Tutorial do GM: criando e editando quests com `[criarquest`
 
-Guia campo a campo do criador de quests do MysteryShardRP. Ao final, a quest vira um arquivo `.json` em `Data/Quests/`.
+Guia campo a campo do criador/editor de quests. Ao final, a quest vira um
+arquivo `.json` em `Data/Quests/`.
 
 **Requisito:** nível de acesso **GameMaster** ou superior.
+
+> Este documento foi reescrito junto com o gump. A versão anterior descrevia um
+> assistente de 6 passos com 6 campos fixos por objetivo, e listava categorias,
+> dificuldades e tipos de objetivo que não existem nos enums do sistema. Se você
+> tem um JSON antigo feito por ela, vale conferir com `[questdiag`.
 
 ---
 
 ## 1. Fluxo geral
 
-1. Digite `[criarquest` no jogo. Abre o gump de 6 passos.
-2. Preencha cada passo e clique em **Avançar ▶** (ou **◀ Voltar**).
-3. No passo 6, revise e clique em **✦ SALVAR QUEST**.
-4. Digite `[questreload` para carregar a quest no servidor.
-5. Teste com uma conta de jogador.
-
-### Regras do gump que você precisa saber
-
-- **Os campos são salvos ao clicar em Avançar/Voltar**, e só os do passo atual. Fechar o gump no X **perde tudo**: nada é gravado até o passo 6.
-- **Não dá para apagar um campo já preenchido.** Se você deixa um campo vazio e avança, o gump mantém o valor antigo. Para corrigir, escreva outro texto no lugar.
-- **Não use acentos nem caracteres especiais** nos textos digitados (use "Descricao", não "Descrição"). O gump foi feito sem acentos e o cliente pode exibir caracteres quebrados.
-- Salvar com um **ID que já existe sobrescreve o arquivo** sem avisar.
-- Se o ID ou o Nome estiverem vazios, o salvamento é recusado e você volta ao passo 1.
-
----
-
-## 2. Passo 1: Identidade
-
-| Campo | O que colocar | Exemplo |
-| --- | --- | --- |
-| **ID da Quest** | Identificador único, **minúsculo, sem espaços, sem acento**. Vira o nome do arquivo (`ID.json`). Padrão sugerido: `categoria_tema_nome`. Nunca reutilize um ID. | `quest_side_portao_sitiado` |
-| **Nome** | Título que o jogador vê no diário. Pode ter espaços. | `Portao Sitiado` |
-| **Descricao** | Resumo da história e do que o jogador deve fazer, em 2 a 4 frases, na voz do diário. | `Os mortos-vivos atacam o portao norte. O Capitao Aldric precisa de ajuda.` |
-| **Categoria** | Uma das opções abaixo. Digite exatamente assim, com a primeira letra maiúscula. | `Side` |
-| **Dificuldade** | Uma das opções abaixo. | `Normal` |
-| **Chain ID** | Nome da **cadeia** (sequência de quests ligadas). Deixe **vazio** se a quest for avulsa. Todas as quests da mesma cadeia usam o **mesmo** Chain ID. | `main_myrthos_ato1` |
-| **Chain Order** | Posição na cadeia: `1`, `2`, `3`... Use `0` para quest avulsa. | `2` |
-
-**Categorias**
-
-| Categoria | Uso recomendado |
+| Comando | O que faz |
 | --- | --- |
-| `Tutorial` | Primeiros passos de personagens novos |
-| `Main` | História principal, normalmente em cadeia |
-| `Side` | Missões secundárias, avulsas |
-| `Daily` | Repetíveis diárias |
-| `Weekly` | Repetíveis semanais |
-| `Event` | Eventos temporários |
-| `Hidden` | Quests escondidas, descobertas por exploração |
+| `[criarquest` | Abre o assistente de **7 passos** com uma quest em branco |
+| `[editarquest` | Abre a **lista** de quests carregadas para escolher qual editar |
+| `[editarquest <id>` | Abre **direto** o editor naquela quest |
+| `[questreload` | Recarrega os JSON no servidor (rodar depois de salvar) |
+| `[questdiag` | Diagnóstico: o que está impossível de concluir e por quê |
+| `[questdiag npc` | Só o binding de NPCs (quem está sem vínculo) |
 
-**Dificuldades:** `Easy` (iniciante), `Normal`, `Hard`, `Elite`, `Legendary`. Combine com as recompensas do passo 4: quanto maior a dificuldade, maior a recompensa.
+Passos do assistente: **1 Identidade → 2 NPCs → 3 Objetivos → 4 Pré-requisitos →
+5 Recompensas → 6 Diálogo → 7 Revisão**.
+
+### Regras do gump
+
+- **Os campos são salvos ao clicar em Avançar/Voltar**, e só os do passo atual.
+  Fechar no **X perde tudo** — nada é gravado em disco até o passo 7.
+- **Limpar um campo funciona**: se você apagar o texto e avançar, o valor vira
+  vazio. (No gump antigo o valor antigo era mantido à força.)
+- **Acentos podem ser usados** no conteúdo da quest (nome, descrição, diálogos).
+  Os JSON existentes já usam. Os *rótulos* do gump é que são escritos sem acento,
+  por limitação de renderização do cliente — isso não afeta o que você digita.
+- **A validação bloqueia o salvamento.** No passo 7 o gump lista o que tornaria a
+  quest impossível de concluir e o botão de salvar recusa até você corrigir.
+- **Salvar faz backup**: se o arquivo já existir, é gravado um `.bak` ao lado
+  antes de sobrescrever.
+- Em modo edição o **ID é imutável** (aparece em vermelho). Mudar o ID de uma
+  quest existente corromperia o histórico de quem já a completou.
 
 ---
 
-## 3. Passo 2: NPCs
-
-### NPC que dá a quest
+## 2. Passo 1 — Identidade
 
 | Campo | O que colocar | Exemplo |
 | --- | --- | --- |
-| **Giver NPC ID** | ID interno do NPC que entrega a quest. Deve ser **idêntico** ao ID usado no NPC dentro do jogo. Minúsculo, sem espaços. | `npc_capitao_guarda` |
-| **Giver NPC Nome** | Nome de exibição do NPC (só texto, para o diário). | `Capitao da Guarda Aldric` |
+| **ID da Quest** | Identificador único, minúsculo, sem espaços nem acento. Vira o nome do arquivo (`ID.json`) quando a quest é nova. | `quest_side_portao_sitiado` |
+| **Nome** | Título que o jogador vê no diário. | `Portao Sitiado` |
+| **Descricao** | Resumo da história e do que fazer, 2 a 4 frases. | `Os mortos-vivos atacam o portao norte.` |
+| **Categoria** | Uma da lista abaixo. | `Side` |
+| **Dificuldade** | Uma da lista abaixo. | `Normal` |
+| **Chain ID** | Nome da cadeia (sequência de quests ligadas). Vazio = quest avulsa. | `main_myrthos_ato1` |
+| **Chain Order** | Posição na cadeia: `1`, `2`, `3`… Use `0` para avulsa. | `2` |
+| **Proxima quest (id)** | ID da quest que esta destrava ao ser concluída. | `quest_side_portao_2` |
 
-### NPC de entrega
+**Categorias válidas** (enum `QuestCategory`):
+`Main`, `Side`, `Daily`, `Weekly`, `Event`, `Guild`, `Tutorial`, `Profession`.
+
+**Dificuldades válidas** (enum `QuestDifficulty`):
+`Trivial`, `Easy`, `Normal`, `Hard`, `VeryHard`, `Epic`, `Legendary`.
+
+> Valor fora da lista não é erro fatal — o loader substitui pelo padrão (`Side` /
+> `Normal`) e o `[questdiag` avisa. Mas a quest aparece com a categoria errada.
+
+---
+
+## 3. Passo 2 — NPCs e configurações
+
+### NPC que oferece / que recebe
 
 | Campo | O que colocar |
 | --- | --- |
-| **TurnIn NPC ID / Nome** | NPC onde o jogador entrega a quest. **Se for o mesmo que deu a quest, repita os mesmos valores do Giver.** Se for outro NPC, use o ID dele. |
+| **Giver NPC ID** | ID lógico do NPC que oferece a quest. **Deve ser idêntico** ao `QuestNpcId` vinculado no NPC do jogo. |
+| **Giver NPC Nome** | Nome de exibição (texto para o diário e para o *fallback* de matching). |
+| **TurnIn NPC ID / Nome** | NPC onde o jogador entrega. Se for o mesmo do giver, repita os valores. |
 
-> Se o ID do NPC não bater com o ID configurado no NPC do jogo, a quest nunca aparece (ou nunca pode ser entregue). É o erro mais comum.
+> **O erro mais comum de todos.** Se o ID não bater com nenhum NPC vinculado no
+> mundo, a quest nunca aparece — ou nunca pode ser entregue. Vincule com:
+>
+> ```
+> [questreload                     ← PRIMEIRO: carrega os JSON
+> [questnpcset npcid npc_capita_maelis   ← DEPOIS: mira no NPC e roda
+> ```
+>
+> A ordem importa: `[questnpcset npcid` reindexa as quests do NPC na hora, então
+> rodar antes do `[questreload` vincula o NPC a zero quests.
+>
+> `[questdiag npc` lista exatamente quem está sem binding, com o comando pronto
+> para copiar.
+
+Se você deixar o TurnIn vazio, o gump copia o Giver automaticamente.
 
 ### Configurações
 
-| Opção | Marque quando... |
+| Opção | Marque quando… |
 | --- | --- |
-| **Repetivel** | O jogador puder refazer a quest depois de concluída (Daily, Weekly, farm). |
-| **Compartilhavel** | Quem aceitar a quest puder dividir com os membros da party. |
-| **Auto-iniciar** | A quest começar sozinha, sem falar com o NPC (tutoriais, eventos de área). Se marcar, o diálogo "ao aceitar" ainda deve ser preenchido. |
-| **Cooldown (horas)** | Só importa se for Repetivel. Tempo de espera antes de refazer. `24` = diária, `168` = semanal, `0` = sem espera. Só números inteiros. |
+| **Repetivel** | O jogador puder refazer depois de concluída (daily, weekly, farm). |
+| **Compartilhavel** | Quem aceitar puder dividir progresso com a party. |
+| **Auto-iniciar** | A quest começar sozinha, sem falar com NPC (tutorial, evento de área). |
+| **Cooldown (horas)** | Só importa se Repetivel. `24` = diária, `168` = semanal, `0` = sem espera. |
+| **Max. conclusoes** | `0` = ilimitado. Limite total de vezes que um jogador pode concluir. |
 
----
-
-## 4. Passo 3: Objetivos
-
-Clique em **Adicionar objetivo** e preencha a janela. Repita para cada objetivo. O lixo (botão vermelho à direita) remove um objetivo.
-
-> A lista mostra cerca de 6 objetivos por vez. Se precisar de mais, divida em duas quests de uma cadeia.
-
-### Campos da janela "Novo Objetivo"
+### Limite de tempo
 
 | Campo | O que colocar |
 | --- | --- |
-| **Tipo** | O que o jogador faz. Ver tabela abaixo. Padrão: `kill`. |
-| **Descricao** | Texto do objetivo no diário. Escreva como ação. Ex.: `Derrote os esqueletos`. |
-| **Alvo (tipo)** | Nome **técnico** do alvo. Para mobs e itens, é o **nome da classe C#** (ex.: `Esqueleto`, `ZumbiCustom`, `CopperCoin`). Para NPCs ou locais, o ID/nome interno usado pelo sistema. |
-| **Nome do alvo** | Nome **amigavel**, exibido ao jogador. Ex.: `Esqueletos`. |
-| **Quantidade** | Quantas vezes. Mínimo 1 (valores inválidos viram 1). |
-| **Dica local** | Onde encontrar o alvo. Ex.: `Estrada ao norte do portao`. Ajuda o jogador a não ficar perdido. |
-
-### Tipos de objetivo
-
-| Tipo | O jogador deve... | Alvo (tipo) normalmente é... |
-| --- | --- | --- |
-| `kill` | Matar criaturas | classe do mob |
-| `collect` | Reunir itens | classe do item |
-| `explore` | Chegar a um local | ID/nome da região |
-| `deliver` | Entregar algo a um NPC | ID do NPC destinatário |
-| `talkto` | Conversar com um NPC | ID do NPC |
-| `escort` | Escoltar um NPC/animal | ID/classe do escoltado |
-| `craft` | Fabricar itens | classe do item |
-| `useskill` | Usar uma habilidade | nome da skill |
-| `interact` | Interagir com objeto/NPC | ID/classe do alvo |
-| `defend` | Defender um ponto ou NPC | ID do ponto/NPC |
-
-> Estas são as convenções esperadas. **O que o "Alvo (tipo)" realmente aceita depende do código do seu QuestManager/loader** (o gump só grava o texto). Se um tipo novo não conta progresso, confira no código como cada tipo compara o alvo.
-
-**Dicas de design**
-
-- Prefira 1 a 3 objetivos por quest para iniciantes.
-- Combine tipos: `talkto` → `kill` → `deliver` conta uma história melhor do que só `kill`.
-- Preencha sempre a **Dica local**. Jogadores novos não sabem onde ir.
+| **Ativo** | Liga o cronômetro. |
+| **Minutos** | Duração. Se você preencher os minutos e esquecer de marcar **Ativo**, o loader ativa sozinho. |
+| **Ao expirar** | `Fail` (reprovada), `Reset` (volta ao início) ou `Nothing`. |
+| **Avisos (min, \| )** | Marcos de aviso, separados por `\|`. Ex.: `30\|10\|5` avisa quando faltarem 30, 10 e 5 minutos. Cada marco dispara **uma única vez**. |
 
 ---
 
-## 5. Passo 4: Recompensas
+## 4. Passo 3 — Objetivos
 
-| Campo | O que colocar | Referência |
+Clique em **Adicionar objetivo**, escolha o **tipo** na lista e preencha o
+formulário próprio daquele tipo. Cada objetivo tem botão de **editar** (lápis) e
+**remover** (X).
+
+**Sequencial**: com a caixa marcada, um objetivo só fica ativo depois que o
+anterior completar. Sem marcar, todos progridem em paralelo.
+
+> Objetivos marcados como **Opcional** não bloqueiam a conclusão. Cuidado: se
+> **todos** forem opcionais, nada é obrigatório e a quest nunca completa — a
+> validação do passo 7 aponta isso.
+
+### Os 14 tipos
+
+| Tipo | O jogador deve… | Alvo principal |
 | --- | --- | --- |
-| **Ouro** | Quantidade de ouro, só números. | Easy: 100-500 · Normal: 500-2000 · Hard+: conforme a economia do shard |
-| **Fama** | Pontos de fama ganhos. | 0 a algumas centenas |
-| **Karma** | Pontos de karma. **Aceita valor negativo?** Depende do seu loader; teste antes. | 0 a algumas centenas |
+| `kill` | Matar criaturas | `targetType` = classe do mob |
+| `collect` | Reunir itens no inventário | `itemType` = classe do item |
+| `deliver` | Levar um item a um NPC | `itemType` + `targetNpcId` |
+| `talkto` | Falar com um NPC | `targetNpcId` |
+| `escort` | Escoltar um NPC até um destino | `destinationRegion` **ou** coords |
+| `defend` | Resiste a ondas de inimigos num local | `enemyType` + coords |
+| `destroy` | Destruir objeto/estrutura/criatura | `targetType` ou `targetSerials` |
+| `explore` | Ir a um local (e permanecer) | coords **ou** `locationName` |
+| `craft` | Fabricar um item | `itemType` + `craftSkill` |
+| `useskill` | Usar uma skill N vezes | `skill` |
+| `skillgain` | Elevar uma skill até um valor | `skill` + `targetValue` |
+| `interact` | Interagir com objeto (duplo clique/fala) | `targetType` ou `targetSerials` |
+| `useitem` | Usar um item específico | `itemType` |
+| `survive` | Sobreviver por um tempo | `durationSeconds` |
 
-Campos vazios ou com texto inválido viram `0`.
-
-### Itens de recompensa
-
-Clique em **Adicionar item**:
+### Campos que todo objetivo tem
 
 | Campo | O que colocar |
 | --- | --- |
-| **Tipo (class)** | Nome **exato da classe C#** do item. Maiúsculas importam. Ex.: `CopperCoin`, `CustomBandage`. |
-| **Nome** | Nome de exibição (só informativo no diário/revisão). |
-| **Quantidade** | Número de itens (mínimo 1). |
+| **Quantidade necessaria** | Quantas vezes. Mínimo 1 — `0` ou negativo trava o objetivo. |
+| **Descricao** | Texto no diário/rastreador. Escreva como ação: `Derrote os esqueletos`. |
+| **Dica de local** | Onde encontrar o alvo. Jogador novo não sabe onde ir. |
+| **Opcional** | Não bloqueia a conclusão. |
+| **Oculto** | Não aparece no rastreador até ser descoberto. |
 
-> **Cuidado com duplicar ouro:** o padrão do campo Tipo é `Gold`. Se você já colocou valor no campo **Ouro**, não adicione também um item `Gold`, ou o jogador recebe duas vezes. Se sua economia usa moedas customizadas (como `CopperCoin`), deixe **Ouro = 0** e entregue a recompensa como item.
+O formulário é paginado: se o tipo tiver muitos campos (`escort` tem 23), use
+**Mais campos ▶** e **◀ Campos**.
 
----
+### Tabela completa de campos por tipo
 
-## 6. Passo 5: Diálogo
+**`kill`** — `targetType` (classe do mob), `targetName` (nome exibido, casa boss
+renomeado), `targetTypes` (classes extras, separadas por vírgula),
+`requiredRegion` (vazio = qualquer lugar), `countPetKills`, `countPartyKills`.
 
-Três caixas, uma para cada momento da conversa com o NPC:
+**`collect`** — `itemType`, `itemName`, `itemHue` (0 = qualquer),
+`consumeOnComplete` (retira os itens na entrega), `markAsQuestItem`,
+`fromMobTypes` (classes que dropam o item, separadas por vírgula), `dropChance`
+(%, só vale com `fromMobTypes`).
 
-| Campo | Quando aparece | O que escrever |
-| --- | --- | --- |
-| **Ao aceitar** | Jogador aceita a quest | Apresenta o problema e pede ajuda |
-| **Em progresso** | Jogador volta falar sem ter terminado | Lembrete curto do que falta |
-| **Ao completar** | Jogador entrega a quest | Agradecimento e entrega da recompensa |
+**`deliver`** — `itemType`, `itemName`, `targetNpcId`, `targetNpcName`,
+`giveItemOnAccept` (o sistema cria e entrega o item no aceite), `itemHue`,
+`onItemLostAction` (`Fail` ou `Nothing`).
 
-**Várias falas:** separe com `|` (pipe). Cada trecho vira uma fala separada do NPC.
+**`talkto`** — `targetNpcId`, `targetNpcName`, `speechTrigger` (palavra exigida;
+vazio = qualquer fala), `grantItems` (itens concedidos na fala, formato
+`Tipo|Nome|Qtd`, vários separados por `;`).
 
-```
-Os mortos cercam o portao!|Preciso de alguem corajoso.|Derrote 10 esqueletos e volte aqui.
-```
+**`escort`** — `escortNpcName`, `escortNpcId`, `destinationRegion` **ou**
+`destinationX/Y/Z` + `destinationMap`, `destinationName`, `radiusToComplete`,
+`spawnOnAccept`, `spawnX/Y/Z` + `spawnMap` (0 = local do jogador), `escortBody`
+(`0x190` homem / `0x191` mulher), `escortHue` (0 = aleatório), `escortHits`
+(0 = padrão), `defendsItself`, `teleportWhenStuck`, `maxDistanceFromOwner`,
+`stuckTimeoutSeconds`, `onEscortDead` (`FailQuest` / `Respawn` / `ResetObjective`
+/ `Nothing`).
 
-**Regras:** não use aspas duplas no meio do texto, escreva tudo sem acentos, e mantenha cada fala curta (uma ou duas frases) para caber na tela do NPC.
+**`defend`** — `enemyType`, `enemiesPerWave`, `totalWaves`,
+`timeBetweenWavesSeconds`, `locationName`, `locationX/Y`, `mapName`,
+`radiusTiles`.
 
----
+**`destroy`** — `targetType`, `targetName`, `targetSerials` (seriais específicos,
+separados por vírgula), `respawnOnFail`.
 
-## 7. Passo 6: Revisão e salvar
+**`explore`** — `locationName`, `locationX/Y/Z`, `mapName`, `radiusTiles`,
+`stayDurationSeconds` (0 = só chegar), `triggerOnEnter`.
 
-Confere ID, Nome, Categoria, Dificuldade, NPC, Repetível, número de Objetivos, Ouro e número de Itens. Se algo estiver errado, volte com **◀ Voltar**. Estando tudo certo, clique em **SALVAR QUEST**.
+**`craft`** — `itemType`, `itemName`, `craftSkill`, `requireExceptional`,
+`consumeOnComplete`.
 
-Mensagem de sucesso: `Quest salva com sucesso!` com o nome do arquivo. O arquivo vai para `Data/Quests/<ID>.json` (espaços do ID viram `_`). Depois digite **`[questreload`**.
+**`useskill`** — `skill`, `requireSuccess` (só conta se acertar).
 
----
+**`skillgain`** — `skill`, `targetValue`, `startValue` (0 = valor atual), `mode`
+(`ReachValue` ou `GainAmount`).
 
-## 8. Exemplo completo: "Portao Sitiado"
+**`interact`** — `targetType`, `targetName`, `targetSerials`, `interactionType`
+(`DoubleClick` ou `Speech`), `speechTrigger`.
 
-**Passo 1**
+**`useitem`** — `itemType`, `itemName`, `itemHue`, `consumeOnUse`.
 
-- ID: `quest_side_portao_sitiado`
-- Nome: `Portao Sitiado`
-- Descricao: `Esqueletos e zumbis cercam o portao norte. O Capitao Aldric precisa de reforcos.`
-- Categoria: `Side` · Dificuldade: `Normal`
-- Chain ID: *(vazio)* · Chain Order: `0`
-
-**Passo 2**
-
-- Giver: `npc_capitao_guarda` / `Capitao da Guarda Aldric`
-- TurnIn: `npc_capitao_guarda` / `Capitao da Guarda Aldric`
-- Marcar: nenhum · Cooldown: `0`
-
-**Passo 3** (dois objetivos)
-
-1. Tipo `kill` · Descricao `Derrote os esqueletos` · Alvo `Esqueleto` · Nome `Esqueletos` · Qtd `10` · Dica `Estrada ao norte do portao`
-2. Tipo `kill` · Descricao `Derrote os zumbis` · Alvo `ZumbiCustom` · Nome `Zumbis` · Qtd `5` · Dica `Perto do portao`
-
-**Passo 4**
-
-- Ouro `0` · Fama `50` · Karma `25`
-- Itens: `CopperCoin` x `200`; `CustomBandage` x `10`
-
-**Passo 5**
-
-- Aceitar: `Os mortos cercam o portao!|Preciso de ajuda, aventureiro.`
-- Progresso: `Ainda ha mortos-vivos la fora. Continue!`
-- Completar: `O portao esta salvo! Aqui esta sua recompensa.`
+**`survive`** — `durationSeconds`, `requiredRegion` (vazio = qualquer),
+`failOnDeath`.
 
 ---
 
-## 9. Checklist antes de salvar
+## 5. Passo 4 — Pré-requisitos
 
-- [ ] ID único, minúsculo, sem espaços e sem acento
-- [ ] Nome e Descrição preenchidos
-- [ ] Categoria e Dificuldade escritas exatamente como na lista
-- [ ] ID do NPC igual ao ID configurado no NPC do jogo
-- [ ] TurnIn preenchido (repita o Giver se for o mesmo NPC)
-- [ ] Pelo menos 1 objetivo, com **classe C# correta** no Alvo
-- [ ] Dica local em cada objetivo
-- [ ] Ouro não duplicado com item `Gold`
-- [ ] Nomes de classe dos itens conferidos (maiúsculas incluídas)
-- [ ] Diálogos preenchidos, sem aspas duplas, falas separadas por `|`
+Define **quem pode ver e aceitar** a quest. Quem não satisfaz recebe status
+`Locked`, e a quest **nem aparece** na lista do NPC.
 
-## 10. Problemas comuns
-
-| Sintoma | Causa provável |
+| Campo | O que colocar |
 | --- | --- |
-| Quest não aparece no NPC | Giver NPC ID diferente do ID do NPC no jogo, ou faltou `[questreload` |
-| Objetivo nunca progride | Alvo (tipo) com nome de classe errado ou tipo não suportado pelo loader |
-| Recompensa não chega | Nome da classe do item errado |
-| Ouro recebido em dobro | Ouro preenchido **e** item `Gold` |
-| Texto estranho/quadrado no jogo | Acentos ou símbolos especiais nos campos |
-| Valor antigo reaparece | O gump não apaga campos vazios; escreva um novo valor |
-| Perdi tudo ao fechar | Nada é salvo antes do passo 6; só feche depois de salvar |
-| Quest sumiu/mudou | Outro GM salvou com o mesmo ID e sobrescreveu o arquivo |
+| **Quests exigidas** | IDs separados por vírgula. O jogador precisa ter **concluído** todas. |
+| **Level minimo** | `0` = sem exigência. (Só vigora se o shard expuser nível; no ServUO puro é ignorado em vez de reprovar.) |
+| **Fama minima** | `0` = sem exigência. |
+| **Karma minimo / maximo** | Janela de karma. Vazio = sem limite naquele lado. |
+| **Faccao** | Nome da facção. Vazio = qualquer. |
+| **Guilda** | Nome ou sigla. Vazio = qualquer. |
+| **Racas permitidas** | Separadas por vírgula. Vazio = todas. |
+| **Msg. quando recusado** | Texto que o jogador vê ao não satisfazer a condição. Vazio = mensagem padrão de cada regra. |
+| **Skills minimas** | Botão **Adicionar skill** → nome + valor mínimo. |
+| **Itens exigidos** | Botão **Adicionar item** → classe + nome + quantidade. A busca percorre mochila, sub-containers e equipados. |
+
+### Exemplo: quest de ladino
+
+Para uma quest que **só aparece** para quem tem `Stealing` e `Snooping`:
+
+```
+Skills minimas:
+   Stealing >= 30.0
+   Snooping >= 30.0
+Msg. quando recusado: Voce nao tem maos leves o bastante para este trabalho.
+```
+
+Há um exemplo pronto em `Data/Quests/Exemplos/exemplo_15_ladino_roubo.json`.
+
+> Cuidado com `minKarma` maior que `maxKarma`: a janela fica vazia e **ninguém**
+> entra. A validação aponta.
+
+---
+
+## 6. Passo 5 — Recompensas
+
+| Campo | O que colocar |
+| --- | --- |
+| **Ouro** | Quantidade. `0` = nada. |
+| **Fama / Karma / Experiencia** | Karma aceita negativo. |
+| **Depositar ouro no banco** | Marca = ouro vai direto para o banco, não para a mochila. |
+| **Titulos (separar por \|)** | Títulos concedidos. |
+
+**Adicionar item** → `Tipo`, `Nome`, `Quantidade`, `Hue` (0 = normal), `Chance`
+(%, 100 = sempre). O botão X ao lado de cada entrada remove.
+
+**Adicionar skill** → `Skill`, `Pontos ganhos`, `Aumento de cap`. O ganho é
+limitado ao `SkillsCap` do jogador — não estoura o teto.
+
+> **Tipo do item** aceita duas coisas: uma **classe real do ServUO** (`Gold`,
+> `Longsword`, `Bandage`) ou um **nome de item virtual de quest**
+> (`SeloFortaleza`, `CartaLacradaOlin`). Quando a classe não existe, o sistema
+> cria um `QuestItem` com aquela tag automaticamente.
+>
+> **Não duplique ouro**: se preencheu o campo **Ouro**, não adicione também um
+> item `Gold`.
+
+---
+
+## 7. Passo 6 — Diálogo
+
+| Campo | Quando o NPC fala |
+| --- | --- |
+| **Ao oferecer** | Ao propor a quest |
+| **Ao aceitar** | Quando o jogador aceita |
+| **Ao recusar** | Quando o jogador recusa |
+| **Em progresso** | Quando o jogador fala com a quest em andamento |
+| **Ao completar** | Na entrega |
+| **Mensagem final** | Mensagem de conclusão (fora da fala do NPC) |
+
+- **Separe falas com `|`** (pipe). Ex.: `Muito bem!|Aqui esta sua recompensa!`
+- **Marcadores**: `{playerName}` e `{questName}` são substituídos em jogo.
+
+---
+
+## 8. Passo 7 — Revisão e salvar
+
+Mostra o resumo (ID, nome, categoria, giver, turn-in, nº de objetivos,
+pré-requisitos, recompensas, limite de tempo, próxima quest) e o resultado da
+**validação**.
+
+Se houver problemas, eles aparecem em vermelho e o botão **✦ SALVAR QUEST** (ou
+**✦ SALVAR ALTERACOES**, em modo edição) **recusa** a gravação, listando até 8
+no chat. É de propósito: o objetivo é impedir que uma quest impossível chegue ao
+disco.
+
+Depois de salvar:
+
+```
+[questreload
+[questdiag <id-da-sua-quest>
+[questdiag npc
+```
+
+---
+
+## 9. Editar uma quest existente
+
+`[editarquest` abre a lista paginada (14 por página) com ID, nome e nº de
+objetivos. Clique na seta para abrir no editor. Com `[editarquest <id>` vai
+direto.
+
+O editor **recarrega o JSON de volta para o formulário** — identidade, NPCs,
+configurações, todos os objetivos com seus campos específicos, pré-requisitos,
+recompensas e diálogos. Ao salvar, sobrescreve o **arquivo de origem** (com
+`.bak`), não um arquivo novo.
+
+> Se você editar uma quest que **jogadores têm em andamento**, rode
+> `[questreload` depois: o progresso em andamento é realinhado automaticamente
+> com a nova definição. Sem isso, remover um objetivo deixaria uma entrada órfã
+> no progresso do jogador e a quest travaria para sempre.
+
+---
+
+## 10. Armadilhas que tornam uma quest impossível
+
+Todas estas são detectadas pelo `[questdiag`. Estão listadas porque já
+aconteceram de verdade neste sistema.
+
+### `craftSkill` é o nome da FERRAMENTA, não do ofício
+
+Em runtime o valor comparado é a classe da ferramenta (`SewingKit`,
+`SmithyHammer`, `DovetailSaw`). O sistema **agora aceita os dois** — ofício ou
+ferramenta — então `Tailoring` funciona. Mas erro de grafia nos dois lados
+continua sendo objetivo impossível.
+
+Ofícios aceitos: `Blacksmith`, `Tailoring`, `Carpentry`, `Fletching`/`Bowcraft`,
+`Alchemy`, `Inscription`, `Tinkering`, `Cartography`.
+
+### Nunca use `locationHint` em objetivo `explore`
+
+O parser lê `locationHint` como *alias* de `locationName`, e `locationName` vira
+**exigência de região** combinada com **E** (não OU) com as coordenadas. Como o
+texto de uma dica não é nome de região, o objetivo nunca completa.
+
+Use só `description` para o texto. (Em `defend` o alias existe, mas lá
+`locationName` é decorativo — o driver usa só as coordenadas.)
+
+### Item virtual precisa de uma fonte
+
+Se o objetivo pede um item que **não existe** no shard (`SeloFortaleza`), o
+sistema o cria — mas só quando alguém o entrega. Sem `grantItems` num `talkto`,
+`giveItemOnAccept` num `deliver` ou `fromMobTypes` num `collect`, o jogador
+nunca consegue o item. O `[questdiag` aponta como bloqueante.
+
+### Escolta sem destino
+
+Sem `destinationRegion` **nem** coordenadas, o NPC escoltado anda para sempre.
+Prefira declarar os dois: a chegada é aceita por região **ou** por raio, então
+sobrevive a região renomeada ou coordenada imprecisa.
+
+Deixe `teleportWhenStuck` ligado: se o NPC travar em geometria, ele é
+teletransportado até você em vez de parar a quest.
+
+### `useskill` nem sempre dispara
+
+O ServUO só dispara o evento de skill quando o teste é **desafiador**. Com skill
+alta demais (`value >= maxSkill`) ou baixa demais (`value < minSkill`), ele
+retorna sem evento. Para `Stealing`, prefira um objetivo `collect` do item
+roubado — é o que o exemplo do ladino faz, e o motivo está documentado no
+`_meta` dele.
+
+### Alvo que não existe no shard
+
+`targetType: "Esqueleto"` ou `"Wolf"` não são classes do ServUO — só casam pelo
+**nome exibido** da criatura, o que quebra se o mob for renomeado ou spawnado com
+nome padrão. Use a classe real (`Skeleton`, `GreyWolf`, `DireWolf`) e deixe o
+nome em português no campo de nome, que é o *fallback* correto.
+
+---
+
+## 11. Checklist antes de dar por pronta
+
+```
+[questreload
+[questdiag <id>          ← 0 bloqueantes?
+[questdiag npc           ← todos os NPCs vinculados?
+```
+
+- [ ] `[questdiag` reporta **0 bloqueantes** para a quest
+- [ ] `[questdiag npc` não lista nenhum NPC exigido por ela
+- [ ] Todo tipo de item/criatura é uma **classe real** ou um item virtual **com fonte**
+- [ ] Todo objetivo tem `description` e quantidade ≥ 1
+- [ ] Nem todos os objetivos são opcionais
+- [ ] Escolta tem destino; `explore` não usa `locationHint`
+- [ ] Testou com uma conta de jogador: aceitou, progrediu e **entregou**

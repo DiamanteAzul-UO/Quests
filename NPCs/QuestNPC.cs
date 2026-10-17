@@ -719,6 +719,46 @@ namespace Server.Custom.QuestSystem.NPCs
             SendHint(player, "Diga o nome da missao.");
         }
 
+        /// <summary>
+        /// Substitui os marcadores de uma fala de quest vinda do JSON.
+        ///
+        /// Por que existe:
+        ///   O gump criador e o tutorial do GM prometem que {playerName} e
+        ///   {questName} são substituídos em jogo, mas os caminhos de Accept e
+        ///   Complete enviavam line.Text CRU para SayTo — o jogador via
+        ///   literalmente "Parabens, {playerName}!". Só o caminho de Offer
+        ///   (DialogueManager.ExecuteNode) fazia a substituição.
+        ///
+        ///   Aceita {playerName}, {npcName}, {questName} e {questId}, em
+        ///   qualquer combinação de maiúsculas, igual ao ExecuteNode.
+        /// </summary>
+        private string FormatQuestLine(PlayerMobile player, QuestDefinition definition, string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            // Sem marcador nenhum, evita alocar dicionário à toa: isso roda para
+            // cada linha de fala de cada aceite/entrega de quest.
+            if (text.IndexOf('{') < 0)
+                return text;
+
+            var context = new Dictionary<string, string>
+            {
+                { "playerName", player != null ? player.Name ?? "aventureiro" : "aventureiro" },
+                { "npcName", Name ?? "NPC" }
+            };
+
+            if (definition != null)
+            {
+                context["questId"] = definition.Id ?? "";
+                context["questName"] = !string.IsNullOrWhiteSpace(definition.Name)
+                    ? definition.Name
+                    : (definition.Id ?? "");
+            }
+
+            return SpeechHelper.ReplacePlaceholders(text, context);
+        }
+
         private string GetQuestStatusText(PlayerMobile player, string questId)
         {
             var status = player.GetQuestStatus(questId);
@@ -925,7 +965,7 @@ namespace Server.Custom.QuestSystem.NPCs
                     int delay = 0;
                     foreach (var line in definition.Dialogue.Accept.Lines)
                     {
-                        string text = line.Text;
+                        string text = FormatQuestLine(player, definition, line.Text);
                         Timer.DelayCall(TimeSpan.FromMilliseconds(delay), delegate
                         {
                             SayTo(player, text);
@@ -1143,7 +1183,7 @@ namespace Server.Custom.QuestSystem.NPCs
                     int delay = 0;
                     foreach (var line in definition.Dialogue.Complete.Lines)
                     {
-                        string text = line.Text;
+                        string text = FormatQuestLine(player, definition, line.Text);
                         Timer.DelayCall(TimeSpan.FromMilliseconds(delay), delegate
                         {
                             SayTo(player, text);
