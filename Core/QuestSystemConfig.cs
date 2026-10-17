@@ -436,6 +436,29 @@ namespace Server.Custom.QuestSystem
                 Console.WriteLine($"[QuestSystem] DEBUG: {message}");
         }
 
+        /// <summary>
+        /// Traço de operação normal, impresso apenas com DebugMode ativo.
+        ///
+        /// Diferente de LogDebug, NÃO acrescenta prefixo: as mensagens dos
+        /// caminhos quentes já chegam identificadas ("[QuestManager] ...",
+        /// "[QuestSystem] ..."), e prefixar de novo produziria
+        /// "[QuestSystem] DEBUG: [QuestManager] ...".
+        ///
+        /// Por que existe:
+        ///   GiveRewards, SyncCollectObjectives, RollMobDrops e OnDeliverItem
+        ///   escreviam no console em TODA ocorrência — cerca de 20 linhas por
+        ///   quest concluída só em GiveRewards. Num shard movimentado isso
+        ///   afogava os erros reais, que são justamente o que o GM precisa ver.
+        ///
+        ///   Erros, avisos e problemas de configuração continuam em
+        ///   Console.WriteLine sem condição. Só o traço de sucesso é silenciável.
+        /// </summary>
+        public void LogVerbose(string message)
+        {
+            if (DebugMode)
+                Console.WriteLine(message);
+        }
+
         #endregion
 
         #region Reload

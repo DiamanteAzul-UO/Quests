@@ -1212,7 +1212,7 @@ namespace Server.Custom.QuestSystem.Quests
                     else
                         drop.MoveToWorld(killed.Location, killed.Map);
 
-                    Console.WriteLine("[QuestManager] Drop de quest gerado: " + collect.ItemType +
+                    QuestSystemConfig.Instance.LogVerbose("[QuestManager] Drop de quest gerado: " + collect.ItemType +
                                       " de " + killedType + " para " + player.Name);
                 }
             }
@@ -2445,7 +2445,7 @@ namespace Server.Custom.QuestSystem.Quests
                     // ── 4. Atualiza progresso ─────────────────────────────────
                     active.Progress[i].SetProgress(active.Progress[i].Required);
 
-                    Console.WriteLine("[QuestManager] Deliver OK: '" + deliverObj.ItemType + "' entregue a '" +
+                    QuestSystemConfig.Instance.LogVerbose("[QuestManager] Deliver OK: '" + deliverObj.ItemType + "' entregue a '" +
                                       npc.Name + "' por " + player.Name);
 
                     active.CheckCompletion();
@@ -2538,7 +2538,7 @@ namespace Server.Custom.QuestSystem.Quests
                 active.Progress[i].SetProgress(target);
                 anyUpdated = true;
 
-                Console.WriteLine("[QuestManager] SyncCollect: objetivo " + i + " '" + collectObj.ItemType +
+                QuestSystemConfig.Instance.LogVerbose("[QuestManager] SyncCollect: objetivo " + i + " '" + collectObj.ItemType +
                                   "' => " + active.Progress[i].Current + "/" + active.Progress[i].Required);
 
                 if (!notify || player.NetState == null)
@@ -2619,7 +2619,7 @@ namespace Server.Custom.QuestSystem.Quests
                 active.Progress[i].SetProgress(target);
                 anyUpdated = true;
 
-                Console.WriteLine("[QuestManager] SyncSkillGain: objetivo " + i + " '" + skill +
+                QuestSystemConfig.Instance.LogVerbose("[QuestManager] SyncSkillGain: objetivo " + i + " '" + skill +
                                   "' ja em " + playerSkill.Value.ToString("F1") + " >= " +
                                   gainObj.TargetValue.ToString("F1") + " => creditado.");
 
@@ -2686,7 +2686,7 @@ namespace Server.Custom.QuestSystem.Quests
         /// </summary>
         private void GiveRewards(PlayerMobile player, QuestDefinition definition)
         {
-            Console.WriteLine($"[QuestSystem] GiveRewards chamado para quest: {definition?.Id}");
+            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] GiveRewards chamado para quest: {definition?.Id}");
 
             if (player == null || definition == null)
             {
@@ -2697,11 +2697,11 @@ namespace Server.Custom.QuestSystem.Quests
             var rewards = definition.Rewards;
             if (rewards == null)
             {
-                Console.WriteLine("[QuestSystem] Nenhuma recompensa configurada.");
+                QuestSystemConfig.Instance.LogVerbose("[QuestSystem] Nenhuma recompensa configurada.");
                 return;
             }
 
-            Console.WriteLine($"[QuestSystem] Gold: {rewards.Gold}, Fame: {rewards.Fame}, Items: {rewards.Items.Count}");
+            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Gold: {rewards.Gold}, Fame: {rewards.Fame}, Items: {rewards.Items.Count}");
 
             // Gold
             if (rewards.Gold > 0)
@@ -2712,7 +2712,7 @@ namespace Server.Custom.QuestSystem.Quests
                     {
                         Banker.Deposit(player, rewards.Gold);
                         player.SendMessage(0x40, $"Depositado {rewards.Gold} moedas de ouro em seu banco.");
-                        Console.WriteLine($"[QuestSystem] {rewards.Gold} gold depositado no banco.");
+                        QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] {rewards.Gold} gold depositado no banco.");
                     }
                     else
                     {
@@ -2721,7 +2721,7 @@ namespace Server.Custom.QuestSystem.Quests
                             Gold goldItem = new Gold(rewards.Gold);
                             player.Backpack.DropItem(goldItem);
                             player.SendMessage(0x40, $"Voce recebeu {rewards.Gold} moedas de ouro.");
-                            Console.WriteLine($"[QuestSystem] {rewards.Gold} gold adicionado na mochila.");
+                            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] {rewards.Gold} gold adicionado na mochila.");
                         }
                         else
                         {
@@ -2742,7 +2742,7 @@ namespace Server.Custom.QuestSystem.Quests
                 {
                     player.Fame += rewards.Fame;
                     player.SendMessage(0x40, $"Sua fama aumentou em {rewards.Fame}.");
-                    Console.WriteLine($"[QuestSystem] Fame +{rewards.Fame}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Fame +{rewards.Fame}");
                 }
                 catch (Exception ex)
                 {
@@ -2758,7 +2758,7 @@ namespace Server.Custom.QuestSystem.Quests
                     player.Karma += rewards.Karma;
                     string karmaMsg = rewards.Karma > 0 ? $"aumentou em {rewards.Karma}" : $"diminuiu em {Math.Abs(rewards.Karma)}";
                     player.SendMessage(0x40, $"Seu karma {karmaMsg}.");
-                    Console.WriteLine($"[QuestSystem] Karma {rewards.Karma}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Karma {rewards.Karma}");
                 }
                 catch (Exception ex)
                 {
@@ -2782,7 +2782,7 @@ namespace Server.Custom.QuestSystem.Quests
                     {
                         if (Utility.Random(100) >= rewardItem.Chance)
                         {
-                            Console.WriteLine($"[QuestSystem] Item {rewardItem.Type} falhou no teste de chance.");
+                            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Item {rewardItem.Type} falhou no teste de chance.");
                             continue;
                         }
                     }
@@ -2807,7 +2807,7 @@ namespace Server.Custom.QuestSystem.Quests
                         if (onGround)
                             player.SendMessage(QuestConstants.HueWarning, "Sua mochila esta cheia! Item colocado no chao.");
 
-                        Console.WriteLine($"[QuestSystem] Item stackavel dado: {amount}x {rewardItem.Type}");
+                        QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Item stackavel dado: {amount}x {rewardItem.Type}");
                         continue;
                     }
 
@@ -2831,7 +2831,7 @@ namespace Server.Custom.QuestSystem.Quests
                     player.SendMessage(QuestConstants.HueSuccess, "Voce recebeu: {0}x {1}",
                         amount, rewardItem.Name ?? probe.Name ?? rewardItem.Type);
 
-                    Console.WriteLine($"[QuestSystem] Itens dados: {amount}x {rewardItem.Type}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Itens dados: {amount}x {rewardItem.Type}");
                 }
             }
 
@@ -2853,7 +2853,7 @@ namespace Server.Custom.QuestSystem.Quests
                         titleData.SetFlag("title_" + QuestItemMatcher.Normalize(titleReward.Title), true);
 
                     player.SendMessage(QuestConstants.HueSuccess, $"Voce recebeu o titulo: {titleReward.Title}");
-                    Console.WriteLine($"[QuestSystem] Titulo concedido: {titleReward.Title}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Titulo concedido: {titleReward.Title}");
                 }
             }
 
@@ -2890,7 +2890,7 @@ namespace Server.Custom.QuestSystem.Quests
                         skill.Base += skillReward.Amount;
                         player.SendMessage(QuestConstants.HueSuccess,
                             $"Sua habilidade {target} aumentou em {skillReward.Amount}.");
-                        Console.WriteLine($"[QuestSystem] Skill {target} +{skillReward.Amount}");
+                        QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Skill {target} +{skillReward.Amount}");
                     }
                     catch (Exception ex)
                     {
@@ -2911,17 +2911,17 @@ namespace Server.Custom.QuestSystem.Quests
                             case "str":
                                 player.RawStr += statReward.Amount;
                                 player.SendMessage(0x40, $"Sua forca aumentou em {statReward.Amount}.");
-                                Console.WriteLine($"[QuestSystem] STR +{statReward.Amount}");
+                                QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] STR +{statReward.Amount}");
                                 break;
                             case "dex":
                                 player.RawDex += statReward.Amount;
                                 player.SendMessage(0x40, $"Sua destreza aumentou em {statReward.Amount}.");
-                                Console.WriteLine($"[QuestSystem] DEX +{statReward.Amount}");
+                                QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] DEX +{statReward.Amount}");
                                 break;
                             case "int":
                                 player.RawInt += statReward.Amount;
                                 player.SendMessage(0x40, $"Sua inteligencia aumentou em {statReward.Amount}.");
-                                Console.WriteLine($"[QuestSystem] INT +{statReward.Amount}");
+                                QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] INT +{statReward.Amount}");
                                 break;
                         }
                     }
@@ -2940,11 +2940,11 @@ namespace Server.Custom.QuestSystem.Quests
                 {
                     data.SetFlag($"quest_unlocked_{questId}", true);
                     player.SendMessage(0x40, $"Nova missao desbloqueada!");
-                    Console.WriteLine($"[QuestSystem] Quest desbloqueada: {questId}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Quest desbloqueada: {questId}");
                 }
             }
 
-            Console.WriteLine("[QuestSystem] GiveRewards concluido com sucesso.");
+            QuestSystemConfig.Instance.LogVerbose("[QuestSystem] GiveRewards concluido com sucesso.");
         }
 
         /// <summary>
