@@ -246,7 +246,7 @@
         {
           "type": "Kill",
           "description": "Mate o Guardião das Runas",
-          "targetType": "Esqueleto",
+          "targetType": "Skeleton",
           "targetName": "Guardião das Runas",
           "required": 1,
           "locationHint": "O Guardião patrulha as ruínas abaladas ao norte da Fortaleza.",
