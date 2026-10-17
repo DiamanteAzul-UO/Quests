@@ -1,0 +1,40 @@
+{
+  "_meta": {
+    "objetivo": "Interact",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Anvil e uma classe real. interactionType 'DoubleClick' e creditado por EventSink.OnItemUse -> OnInteract.",
+    "alternativa": "Use targetSerials para exigir objetos especificos do mundo (lista de seriais separados por virgula)."
+  },
+  "identity": {
+    "id": "exemplo_interact_bigorna",
+    "name": "Conhecer a Forja",
+    "description": "Dorik quer que você examine a bigorna antes de tocar em qualquer ferramenta.",
+    "category": "Profession",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_ferreiro_dorik",
+    "giverName": "Ferreiro Dorik",
+    "turnInId": "npc_ferreiro_dorik",
+    "turnInName": "Ferreiro Dorik"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Interact",
+      "description": "Use a bigorna (duplo clique)",
+      "targetType": "Anvil",
+      "targetName": "Bigorna",
+      "interactionType": "DoubleClick",
+      "required": 1
+    }
+  ],
+  "rewards": {
+    "gold": 30,
+    "experience": 60
+  }
+}

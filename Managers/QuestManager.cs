@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Server;
 using Server.Mobiles;
 using Server.Items;
@@ -543,6 +544,11 @@ namespace Server.Custom.QuestSystem.Quests
 
             // Sincroniza Collect com o que o jogador JA tem no inventario
             SyncCollectObjectives(player, definition, activeQuest, notify: true);
+
+            // Sincroniza SkillGain: sem isto, quem JA tinha a skill acima do alvo
+            // ficava travado para sempre — o objetivo so credita em OnSkillGain,
+            // e um jogador no cap nunca mais ganha ponto naquela skill.
+            SyncSkillGainObjectives(player, definition, activeQuest, notify: true);
 
             // Avalia Explore imediatamente: o jogador pode ter aceitado a
             // missao ja em pe dentro da area (antes so o evento de movimento
@@ -1829,8 +1835,7 @@ namespace Server.Custom.QuestSystem.Quests
                         continue;
 
                     // Verifica sistema de craft (vazio = qualquer um)
-                    if (!string.IsNullOrWhiteSpace(craftObj.CraftSkill) &&
-                        !craftObj.CraftSkill.Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
+                    if (!CraftSystemMatches(craftObj.CraftSkill, craftSystem))
                         continue;
 
                     // Verifica qualidade excepcional
@@ -1841,6 +1846,113 @@ namespace Server.Custom.QuestSystem.Quests
                 }
             }
         }
+
+        /// <summary>
+        /// Casa o "craftSkill" declarado no JSON com o sistema de craft que
+        /// realmente produziu o item.
+        ///
+        /// Por que não é uma comparação direta:
+        ///   QuestEventHandler passa como craftSystem o nome da CLASSE DA
+        ///   FERRAMENTA (e.Tool.GetType().Name), ou seja "SewingKit",
+        ///   "SmithyHammer", "DovetailSaw". Um GM que escreve o óbvio
+        ///   ("craftSkill": "Tailoring" ou "Blacksmith") nunca casava, e o
+        ///   objetivo Craft ficava impossível de concluir — sem nenhum aviso.
+        ///
+        ///   Aqui aceitamos os dois: o nome da ferramenta (comportamento antigo,
+        ///   preservado) ou o nome do ofício, traduzido pela tabela abaixo.
+        /// </summary>
+        /// <param name="declared">Valor de "craftSkill" no JSON; vazio = qualquer ofício.</param>
+        /// <param name="craftSystem">Nome da classe da ferramenta usada no craft.</param>
+        private static bool CraftSystemMatches(string declared, string craftSystem)
+        {
+            if (string.IsNullOrWhiteSpace(declared))
+                return true;    // sem exigência de ofício
+
+            if (string.IsNullOrWhiteSpace(craftSystem))
+                return false;   // exigiu ofício mas o evento não trouxe a ferramenta
+
+            declared = declared.Trim();
+
+            // 1) Nome exato da ferramenta (ex.: "SewingKit")
+            if (declared.Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // 2) Nome do ofício (ex.: "Tailoring") → ferramentas daquele ofício
+            string[] tools;
+
+            if (_craftToolsBySkill.TryGetValue(NormalizeCraftKey(declared), out tools))
+            {
+                for (int i = 0; i < tools.Length; i++)
+                {
+                    if (tools[i].Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True quando o valor declarado em "craftSkill" é reconhecido — seja um
+        /// nome de ofício da tabela, seja uma classe de ferramenta que exista no
+        /// shard.
+        ///
+        /// Exposto para o [questdiag] apontar erro de grafia ANTES de virar uma
+        /// quest impossível de concluir.
+        /// </summary>
+        public static bool IsKnownCraftSkill(string declared)
+        {
+            if (string.IsNullOrWhiteSpace(declared))
+                return false;
+
+            declared = declared.Trim();
+
+            if (_craftToolsBySkill.ContainsKey(NormalizeCraftKey(declared)))
+                return true;
+
+            return QuestItemMatcher.ResolveAnyType(declared) != null;
+        }
+
+        private static string NormalizeCraftKey(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return "";
+
+            var sb = new StringBuilder(value.Length);
+
+            foreach (char c in value)
+            {
+                if (char.IsLetterOrDigit(c))
+                    sb.Append(char.ToLowerInvariant(c));
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Ofício → classes de ferramenta que o representam.
+        /// Só entram aqui classes cuja existência foi confirmada no ServUO.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> _craftToolsBySkill =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                { "blacksmith",       new[] { "SmithyHammer", "SmithHammer", "RunicHammer", "AncientSmithyHammer", "WornHammer" } },
+                { "blacksmithing",    new[] { "SmithyHammer", "SmithHammer", "RunicHammer", "AncientSmithyHammer", "WornHammer" } },
+                { "smithing",         new[] { "SmithyHammer", "SmithHammer", "RunicHammer", "AncientSmithyHammer", "WornHammer" } },
+                { "tailoring",        new[] { "SewingKit", "RunicSewingKit" } },
+                { "tailor",           new[] { "SewingKit", "RunicSewingKit" } },
+                { "carpentry",        new[] { "DovetailSaw", "RunicDovetailSaw", "DrawKnife" } },
+                { "carpenter",        new[] { "DovetailSaw", "RunicDovetailSaw", "DrawKnife" } },
+                { "fletching",        new[] { "FletcherTools" } },
+                { "bowcraft",         new[] { "FletcherTools" } },
+                { "bowyer",           new[] { "FletcherTools" } },
+                { "alchemy",          new[] { "MortarPestle" } },
+                { "inscription",      new[] { "ScribesPen" } },
+                { "scribing",         new[] { "ScribesPen" } },
+                { "tinkering",        new[] { "TinkersTools" } },
+                { "tinker",           new[] { "TinkersTools" } },
+                { "cartography",      new[] { "MapmakersPen" } }
+            };
 
         /// <summary>
         /// Le a propriedade Quality (ItemQuality) de itens craftaveis via reflexao,
@@ -2261,6 +2373,122 @@ namespace Server.Custom.QuestSystem.Quests
                 active.CheckCompletion();
 
             return anyUpdated;
+        }
+
+        /// <summary>
+        /// Credita objetivos SkillGain (modo ReachValue) cuja meta o jogador JA
+        /// atingiu antes de aceitar a quest.
+        ///
+        /// Por que é necessário:
+        ///   O objetivo só progredia em OnSkillGain. Um jogador que já tivesse a
+        ///   skill no valor alvo — ou no cap — nunca mais gerava ganho naquela
+        ///   skill, então o objetivo ficava em 0 para sempre e a quest era
+        ///   impossível de concluir. É a mesma classe de bug que Collect tinha
+        ///   (quem já carregava o item não contava), resolvida com SyncCollect.
+        ///
+        ///   O modo GainAmount mede ganhos FUTUROS por definição, então não é
+        ///   sincronizado aqui.
+        /// </summary>
+        private bool SyncSkillGainObjectives(PlayerMobile player, QuestDefinition definition, ActiveQuest active, bool notify = false)
+        {
+            if (player == null || player.Deleted || definition == null || active == null)
+                return false;
+
+            bool anyUpdated = false;
+
+            for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+            {
+                var gainObj = definition.Objectives[i] as SkillGainObjective;
+                if (gainObj == null)
+                    continue;
+
+                if (string.Equals(gainObj.Mode, "GainAmount", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (gainObj.TargetValue <= 0)
+                {
+                    Console.WriteLine("[QuestManager] SyncSkillGain: objetivo " + i + " de '" + definition.Id +
+                                      "' em modo ReachValue sem targetValue — nunca completa.");
+                    continue;
+                }
+
+                SkillName skill;
+                if (!TryResolveSkillName(gainObj.SkillName, gainObj.Skill, out skill))
+                {
+                    Console.WriteLine("[QuestManager] SyncSkillGain: objetivo " + i + " de '" + definition.Id +
+                                      "' com skill irresolvivel '" + gainObj.SkillName + "'.");
+                    continue;
+                }
+
+                Skill playerSkill = player.Skills[skill];
+                if (playerSkill == null)
+                    continue;
+
+                if (playerSkill.Value < gainObj.TargetValue)
+                    continue;
+
+                int target = gainObj.Required > 0 ? gainObj.Required : 1;
+
+                if (active.Progress[i].Current >= target)
+                    continue;
+
+                bool wasComplete = active.Progress[i].IsComplete;
+
+                active.Progress[i].SetProgress(target);
+                anyUpdated = true;
+
+                Console.WriteLine("[QuestManager] SyncSkillGain: objetivo " + i + " '" + skill +
+                                  "' ja em " + playerSkill.Value.ToString("F1") + " >= " +
+                                  gainObj.TargetValue.ToString("F1") + " => creditado.");
+
+                if (!notify || player.NetState == null)
+                    continue;
+
+                if (active.Progress[i].IsComplete && !wasComplete)
+                    QuestNotificationManager.Instance.NotifyObjectiveComplete(player, definition, gainObj);
+                else
+                    QuestNotificationManager.Instance.NotifyObjectiveProgress(
+                        player, definition, gainObj, active.Progress[i].Current, target);
+            }
+
+            if (anyUpdated)
+                active.CheckCompletion();
+
+            return anyUpdated;
+        }
+
+        /// <summary>
+        /// Resolve a skill de um objetivo para o enum do ServUO.
+        ///
+        /// Não usa o valor do enum como fallback cego: quando o loader não
+        /// consegue resolver o nome, ele deixa Skill no padrão (Alchemy) e
+        /// SkillName com o texto cru. Cair em Alchemy nesse caso faria o
+        /// objetivo medir a skill errada sem nenhum aviso.
+        /// </summary>
+        private static bool TryResolveSkillName(string skillName, SkillName fallback, out SkillName skill)
+        {
+            skill = SkillName.Alchemy;
+
+            if (!string.IsNullOrWhiteSpace(skillName))
+            {
+                SkillName parsed;
+
+                if (Enum.TryParse(skillName, true, out parsed) && Enum.IsDefined(typeof(SkillName), parsed))
+                {
+                    skill = parsed;
+                    return true;
+                }
+
+                return false;   // texto presente mas inválido: não adivinha
+            }
+
+            if (Enum.IsDefined(typeof(SkillName), fallback))
+            {
+                skill = fallback;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

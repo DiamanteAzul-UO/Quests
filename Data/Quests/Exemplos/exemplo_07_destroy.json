@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "objetivo": "Destroy",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Aqui o alvo e uma CRIATURA (StoneGargoyle), creditada via OnCreatureKilled - caminho garantido.",
+    "itens": "Destroy de item/estrutura tambem funciona: EventSink.ItemDeleted esta ligado a OnObjectDestroyed, com autoria atribuida pelo livro-razao de 'ultimo toque' (o evento nao traz o autor e Item.Delete() zera o Map antes de disparar). Use targetType de um objeto que o jogador realmente consiga remover do mundo, ou targetSerials para objetos especificos."
+  },
+  "identity": {
+    "id": "exemplo_destroy_gargulas",
+    "name": "Destruir as Gárgulas",
+    "description": "Gárgulas de pedra despertaram nas ruínas. Destrua 3 delas.",
+    "category": "Side",
+    "difficulty": "Normal"
+  },
+  "npcs": {
+    "giverId": "npc_erudita_naira",
+    "giverName": "Erudita Naira",
+    "turnInId": "npc_erudita_naira",
+    "turnInName": "Erudita Naira"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Destroy",
+      "description": "Destrua 3 gárgulas de pedra",
+      "targetType": "StoneGargoyle",
+      "targetName": "Gárgula de Pedra",
+      "required": 3,
+      "respawnOnFail": false
+    }
+  ],
+  "rewards": {
+    "gold": 280,
+    "fame": 15,
+    "experience": 450
+  }
+}

@@ -459,8 +459,24 @@ namespace Server.Custom.QuestSystem.Quests
 
                 if (!hasCoords && !hasRegion)
                     report.Blocking.Add(tag + ": sem coordenadas nem região — nunca dispara.");
-                else if (hasRegion && !hasCoords)
+                else if (hasRegion)
+                {
                     CheckRegion(explore.LocationName, tag + " locationName", report);
+
+                    // Armadilha silenciosa: com coordenadas E locationName,
+                    // IsInsideExploreArea exige OS DOIS (AND, não OR). E o parser
+                    // aceita "locationHint" como alias de locationName — então um
+                    // GM que escreve uma dica de texto ali transforma a dica em
+                    // exigência de região, e o objetivo nunca completa.
+                    if (hasCoords)
+                    {
+                        report.Warnings.Add(tag + ": coordenadas E locationName '" +
+                                            explore.LocationName + "' declarados juntos — o motor " +
+                                            "exige os DOIS (AND). Se locationName não for uma região " +
+                                            "real, o objetivo nunca completa. Cuidado: 'locationHint' " +
+                                            "é alias de 'locationName' em Explore/Defend.");
+                    }
+                }
 
                 if (explore.RadiusTiles <= 0 && hasCoords)
                     report.Warnings.Add(tag + ": radiusTiles=0 — exige pisar no tile exato.");
@@ -472,9 +488,7 @@ namespace Server.Custom.QuestSystem.Quests
             if (craft != null)
             {
                 CheckItemType(craft.ItemType, craft.ItemName, tag + " itemType", report);
-
-                if (string.IsNullOrWhiteSpace(craft.CraftSkill))
-                    report.Warnings.Add(tag + ": sem craftSkill — qualquer ofício conta.");
+                CheckCraftSkill(craft.CraftSkill, tag + " craftSkill", report);
 
                 return;
             }
@@ -722,6 +736,31 @@ namespace Server.Custom.QuestSystem.Quests
                 return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// Em runtime o "sistema de craft" comparado é o nome da CLASSE DA
+        /// FERRAMENTA (SewingKit, SmithyHammer...), não o nome do ofício.
+        /// CraftSystemMatches aceita os dois, mas erro de grafia nos dois lados
+        /// continua sendo objetivo impossível — e é isso que se aponta aqui.
+        /// </summary>
+        private static void CheckCraftSkill(string craftSkill, string label, QuestReport report)
+        {
+            if (string.IsNullOrWhiteSpace(craftSkill))
+            {
+                report.Warnings.Add(label + ": vazio — qualquer ofício conta.");
+                return;
+            }
+
+            if (QuestManager.IsKnownCraftSkill(craftSkill))
+                return;
+
+            report.Blocking.Add(label + " '" + craftSkill + "' não é um ofício conhecido nem uma " +
+                                "classe de ferramenta existente — o craft nunca será creditado. " +
+                                "Use o ofício (Tailoring, Blacksmith, Carpentry, Fletching, Alchemy, " +
+                                "Inscription, Tinkering, Cartography) ou a ferramenta (SewingKit, " +
+                                "SmithyHammer, DovetailSaw, FletcherTools, MortarPestle, ScribesPen, " +
+                                "TinkersTools, MapmakersPen).");
         }
 
         private static void CheckSkill(string skillName, SkillName skill, string label,

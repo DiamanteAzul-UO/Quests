@@ -1,0 +1,48 @@
+{
+  "_meta": {
+    "objetivo": "Survive",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "requiredRegion e o nome REAL da regiao no Trammel. O driver acumula segundos enquanto o jogador estiver vivo e dentro dela.",
+    "validacao": "[questdiag avisa se durationSeconds for maior que o timeLimit da quest (impossibilidade matematica)."
+  },
+  "identity": {
+    "id": "exemplo_survive_montanhas",
+    "name": "Prova de Resistência",
+    "description": "Sobreviva 2 minutos nas Haven Mountains sem morrer.",
+    "category": "Side",
+    "difficulty": "Normal"
+  },
+  "npcs": {
+    "giverId": "npc_capita_maelis",
+    "giverName": "Capitã Maelis",
+    "turnInId": "npc_capita_maelis",
+    "turnInName": "Capitã Maelis"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "timeLimit": {
+    "enabled": true,
+    "minutes": 10,
+    "onExpire": "Fail",
+    "warnings": [
+      3
+    ]
+  },
+  "objectives": [
+    {
+      "type": "Survive",
+      "description": "Sobreviva 120 segundos nas Haven Mountains",
+      "durationSeconds": 120,
+      "requiredRegion": "Haven Mountains",
+      "failOnDeath": true
+    }
+  ],
+  "rewards": {
+    "gold": 200,
+    "fame": 10,
+    "experience": 350
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "_meta": {
+    "objetivo": "Craft",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "ARMADILHA_CORRIGIDA": "Em runtime o 'sistema de craft' recebido e o nome da CLASSE DA FERRAMENTA (e.Tool.GetType().Name), ou seja 'SewingKit' - nao 'Tailoring'. Antes, escrever craftSkill: \"Tailoring\" nunca casava e o objetivo era impossivel. CraftSystemMatches agora aceita o nome do oficio OU o da ferramenta.",
+    "detalhe": "Shirt e craftavel em DefTailoring (8x Cloth), ferramenta SewingKit."
+  },
+  "identity": {
+    "id": "exemplo_craft_camisa",
+    "name": "Costure uma Camisa",
+    "description": "Tessa quer ver se você consegue costurar uma camisa simples.",
+    "category": "Profession",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_lenhadora_tessa",
+    "giverName": "Lenhadora Tessa",
+    "turnInId": "npc_lenhadora_tessa",
+    "turnInName": "Lenhadora Tessa"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Craft",
+      "description": "Costure 1 camisa",
+      "itemType": "Shirt",
+      "itemName": "Camisa",
+      "craftSkill": "Tailoring",
+      "requireExceptional": false,
+      "consumeOnComplete": false,
+      "required": 1
+    }
+  ],
+  "rewards": {
+    "gold": 80,
+    "experience": 120,
+    "skillGains": [
+      {
+        "skill": "Tailoring",
+        "amount": 1.0
+      }
+    ]
+  }
+}

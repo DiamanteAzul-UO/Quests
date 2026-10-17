@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "objetivo": "Collect",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Bandage e uma classe real. O progresso e medido pelo inventario REAL do jogador (SyncCollectObjectives), entao comprar, achar ou guardar em sub-container tambem conta. consumeOnComplete retira os itens na entrega."
+  },
+  "identity": {
+    "id": "exemplo_collect_bandagens",
+    "name": "Estoques da Enfermaria",
+    "description": "A enfermaria precisa de 10 ataduras. Traga-as.",
+    "category": "Side",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_enfermeira_sera",
+    "giverName": "Enfermeira Sera",
+    "turnInId": "npc_enfermeira_sera",
+    "turnInName": "Enfermeira Sera"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Collect",
+      "description": "Reúna 10 ataduras",
+      "itemType": "Bandage",
+      "itemName": "Ataduras",
+      "required": 10,
+      "consumeOnComplete": true
+    }
+  ],
+  "rewards": {
+    "gold": 120,
+    "experience": 200,
+    "items": [
+      {
+        "type": "HealPotion",
+        "name": "Poção de Cura",
+        "amount": 3
+      }
+    ]
+  }
+}

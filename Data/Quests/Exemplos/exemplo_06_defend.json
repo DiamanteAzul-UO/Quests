@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "objetivo": "Defend",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Skeleton e uma BaseCreature real. As ondas sao geradas no local indicado pelo driver (QuestObjectiveDrivers).",
+    "bug_corrigido": "enemyType era resolvido com QuestItemMatcher.ResolveType, que descarta tudo que nao e Item - devolvia null para QUALQUER criatura e o driver nem iniciava. Agora usa ResolveAnyType.",
+    "required": "total de abates = totalWaves x enemiesPerWave (2 x 3 = 6)."
+  },
+  "identity": {
+    "id": "exemplo_defend_fazenda",
+    "name": "Defender a Fazenda",
+    "description": "Esqueletos estão saindo do solo perto da fazenda. Resista a duas ondas.",
+    "category": "Side",
+    "difficulty": "Normal"
+  },
+  "npcs": {
+    "giverId": "npc_capita_maelis",
+    "giverName": "Capitã Maelis",
+    "turnInId": "npc_capita_maelis",
+    "turnInName": "Capitã Maelis"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "timeLimit": {
+    "enabled": true,
+    "minutes": 20,
+    "onExpire": "Fail",
+    "warnings": [
+      5
+    ]
+  },
+  "objectives": [
+    {
+      "type": "Defend",
+      "description": "Resista a 2 ondas de esqueletos",
+      "enemyType": "Skeleton",
+      "enemiesPerWave": 3,
+      "totalWaves": 2,
+      "timeBetweenWavesSeconds": 20,
+      "locationX": 3723,
+      "locationY": 2622,
+      "mapName": "Trammel",
+      "radiusTiles": 15,
+      "required": 6
+    }
+  ],
+  "rewards": {
+    "gold": 300,
+    "fame": 20,
+    "experience": 500
+  }
+}

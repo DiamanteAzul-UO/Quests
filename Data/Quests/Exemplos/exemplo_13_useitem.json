@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "objetivo": "UseItem",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Creditado por EventSink.OnItemUse. consumeOnUse=false deixa o item na mochila (bandagens ja sao consumidas pelo proprio jogo ao curar)."
+  },
+  "identity": {
+    "id": "exemplo_useitem_atadura",
+    "name": "Primeiros Socorros",
+    "description": "Helena quer ver você aplicar ataduras em si mesmo, 3 vezes.",
+    "category": "Profession",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_healer_newhaven",
+    "giverName": "Helena, a Curandeira",
+    "turnInId": "npc_healer_newhaven",
+    "turnInName": "Helena, a Curandeira"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "UseItem",
+      "description": "Use 3 ataduras",
+      "itemType": "Bandage",
+      "itemName": "Atadura",
+      "required": 3,
+      "consumeOnUse": false
+    }
+  ],
+  "rewards": {
+    "gold": 60,
+    "experience": 90,
+    "items": [
+      {
+        "type": "Bandage",
+        "name": "Ataduras",
+        "amount": 5
+      }
+    ]
+  }
+}

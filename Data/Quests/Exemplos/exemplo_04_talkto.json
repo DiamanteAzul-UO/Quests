@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "objetivo": "TalkTo",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "grantItems cria os itens no momento da fala - e o caminho correto para itens virtuais de quest (que nao tem classe C#). Sem uma fonte assim, um item virtual nunca chega a mochila do jogador.",
+    "speechTrigger": "vazio = qualquer fala com o NPC completa o objetivo."
+  },
+  "identity": {
+    "id": "exemplo_talkto_guia",
+    "name": "Pergunte ao Guia",
+    "description": "Naira quer que você ouça o que Marcus, o Guia, tem a dizer sobre a cidade.",
+    "category": "Side",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_erudita_naira",
+    "giverName": "Erudita Naira",
+    "turnInId": "npc_erudita_naira",
+    "turnInName": "Erudita Naira"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "TalkTo",
+      "description": "Fale com Marcus, o Guia",
+      "targetNpcId": "npc_guide_newhaven",
+      "targetNpcName": "Marcus, o Guia",
+      "required": 1,
+      "grantItems": [
+        {
+          "itemType": "Torch",
+          "itemName": "Tocha",
+          "amount": 1
+        }
+      ]
+    }
+  ],
+  "rewards": {
+    "gold": 40,
+    "experience": 80
+  }
+}

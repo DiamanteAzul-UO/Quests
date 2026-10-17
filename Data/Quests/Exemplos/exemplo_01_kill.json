@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "objetivo": "Kill",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "alvo": "Rat (classe real do ServUO, validada). targetType casa por classe, por heranca ou pelo nome exibido da criatura."
+  },
+  "identity": {
+    "id": "exemplo_kill_ratos",
+    "name": "Ratos no Celeiro",
+    "description": "Ratos estão roendo os sacos de grão. Mate 5 deles.",
+    "category": "Side",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_capita_maelis",
+    "giverName": "Capitã Maelis",
+    "turnInId": "npc_capita_maelis",
+    "turnInName": "Capitã Maelis"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Kill",
+      "description": "Mate 5 ratos",
+      "targetType": "Rat",
+      "required": 5,
+      "countPetKills": true,
+      "countPartyKills": false
+    }
+  ],
+  "rewards": {
+    "gold": 75,
+    "fame": 5,
+    "experience": 150
+  },
+  "dialogue": {
+    "onOffer": [
+      "Os celeiros estão tomados de ratos.",
+      "Cinco deles a menos e eu te pago."
+    ],
+    "onComplete": [
+      "Serviço feito. Aqui está o combinado."
+    ]
+  }
+}
