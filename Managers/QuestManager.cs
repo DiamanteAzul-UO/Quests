@@ -170,6 +170,188 @@ namespace Server.Custom.QuestSystem.Quests
             }
         }
 
+        /// <summary>
+        /// Realinha o Progress snapshot de todas as quests ativas do jogador com a
+        /// definição atualmente carregada.
+        ///
+        /// Por que é necessário:
+        ///   ActiveQuest.Progress é uma CÓPIA tirada no aceite (CreateProgressList),
+        ///   não uma visão da definição. Existem 18 loops no sistema que iteram
+        ///   "i &lt; definition.Objectives.Count &amp;&amp; i &lt; active.Progress.Count".
+        ///
+        ///   Se um GM edita a quest — algo que o novo [editarquest facilita — e o
+        ///   número de objetivos muda, as duas listas divergem:
+        ///     • definição com MAIS objetivos: os novos nunca recebem progresso,
+        ///       porque o loop para no tamanho do Progress antigo;
+        ///     • definição com MENOS objetivos: sobram entradas órfãs no Progress,
+        ///       e CheckCompletion() itera sobre elas — uma entrada órfã nunca
+        ///       completa, então a quest fica travada PARA SEMPRE.
+        ///
+        ///   Sem reconciliar, editar uma quest em uso criava exatamente o sintoma
+        ///   que este sistema existe para eliminar: missão impossível de concluir.
+        /// </summary>
+        /// <returns>Quantas quests ativas foram ajustadas.</returns>
+        public int ReconcileProgress(PlayerMobile player)
+        {
+            if (player == null || player.Deleted)
+                return 0;
+
+            PlayerQuestData data;
+            if (!_playerData.TryGetValue(player.Serial, out data))
+                return 0;
+
+            if (data == null || data.ActiveQuests == null || data.ActiveQuests.Count == 0)
+                return 0;
+
+            int adjusted = 0;
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active == null)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+
+                if (definition == null || definition.Objectives == null)
+                {
+                    // A quest saiu do JSON. Não apago o progresso do jogador —
+                    // destruir dado é pior que deixá-lo órfão, e o [questdiag
+                    // reporta o caso. Só registro.
+                    Console.WriteLine("[QuestManager] Reconcile: '" + active.QuestId +
+                                      "' de " + player.Name + " não existe mais no repositório.");
+                    continue;
+                }
+
+                if (ReconcileOne(active, definition))
+                    adjusted++;
+            }
+
+            if (adjusted > 0)
+            {
+                Console.WriteLine("[QuestManager] Reconcile: " + adjusted +
+                                  " quest(s) de " + player.Name + " realinhada(s) com a definição atual.");
+            }
+
+            return adjusted;
+        }
+
+        /// <summary>Realigns uma única quest ativa. Retorna true se algo mudou.</summary>
+        private static bool ReconcileOne(ActiveQuest active, QuestDefinition definition)
+        {
+            var objectives = definition.Objectives;
+
+            if (active.Progress == null)
+                active.Progress = new List<ObjectiveProgress>();
+
+            bool changed = false;
+
+            // ── 1. Sobram entradas órfãs (definição encolheu) ────────────────
+            while (active.Progress.Count > objectives.Count)
+            {
+                int last = active.Progress.Count - 1;
+                active.Progress.RemoveAt(last);
+                changed = true;
+            }
+
+            // ── 2. Atualiza as entradas existentes ───────────────────────────
+            for (int i = 0; i < active.Progress.Count; i++)
+            {
+                var progress = active.Progress[i];
+                var objective = objectives[i];
+
+                if (progress == null || objective == null)
+                    continue;
+
+                // Se o GM trocou o TIPO do objetivo naquele índice, o progresso
+                // acumulado era de outra tarefa — creditá-lo seria dar a quest de
+                // graça. Zera.
+                if (progress.Type != objective.Type)
+                {
+                    progress.Current = 0;
+                    changed = true;
+                }
+
+                progress.Index = i;
+                progress.Type = objective.Type;
+                progress.Description = objective.Description;
+                progress.IsOptional = objective.IsOptional;
+                progress.IsHidden = objective.IsHidden;
+
+                // Required pode ter mudado; Current precisa caber nele.
+                if (progress.Required != objective.Required)
+                {
+                    progress.Required = objective.Required;
+                    changed = true;
+                }
+
+                int clamped = Math.Max(0, Math.Min(progress.Current, Math.Max(0, objective.Required)));
+
+                if (clamped != progress.Current)
+                {
+                    progress.Current = clamped;
+                    changed = true;
+                }
+
+                bool complete = objective.Required <= 0 || progress.Current >= objective.Required;
+
+                if (progress.IsComplete != complete)
+                {
+                    progress.IsComplete = complete;
+                    changed = true;
+                }
+            }
+
+            // ── 3. Faltam entradas (definição cresceu) ───────────────────────
+            while (active.Progress.Count < objectives.Count)
+            {
+                int i = active.Progress.Count;
+                var objective = objectives[i];
+
+                active.Progress.Add(new ObjectiveProgress
+                {
+                    Index = i,
+                    Type = objective.Type,
+                    Current = 0,
+                    Required = objective.Required,
+                    IsComplete = objective.Required <= 0,
+                    IsOptional = objective.IsOptional,
+                    IsHidden = objective.IsHidden,
+                    Description = objective.Description
+                });
+
+                changed = true;
+            }
+
+            if (changed)
+                active.CheckCompletion();
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Reconcilia todos os jogadores online. Chamado após [questreload, que é
+        /// quando as definições acabaram de mudar sob quests já em andamento.
+        /// </summary>
+        public int ReconcileAllProgress()
+        {
+            int total = 0;
+
+            foreach (NetState state in NetState.Instances)
+            {
+                if (state == null)
+                    continue;
+
+                PlayerMobile player = state.Mobile as PlayerMobile;
+
+                if (player == null || player.Deleted)
+                    continue;
+
+                total += ReconcileProgress(player);
+            }
+
+            return total;
+        }
+
         /// <summary>Limpa os avisos ja disparados de uma quest.</summary>
         internal void ClearTimeWarnings(PlayerMobile player, string questId)
         {

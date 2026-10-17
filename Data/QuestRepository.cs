@@ -344,6 +344,17 @@ namespace Server.Custom.QuestSystem.Quests
         {
             Instance.Reload();
             e.Mobile.SendMessage(0x40, $"[QuestSystem] {Instance.QuestCount} quests recarregadas.");
+
+            // As definições acabaram de mudar sob quests que jogadores têm em
+            // andamento. ActiveQuest.Progress é um snapshot tirado no aceite, então
+            // sem realinhar aqui uma quest editada (objetivo a mais ou a menos)
+            // ficava impossível de concluir: os 18 loops do sistema iteram até o
+            // menor dos dois tamanhos, e CheckCompletion() tropeça nas entradas
+            // órfãs que sobraram.
+            int realigned = QuestManager.Instance.ReconcileAllProgress();
+
+            if (realigned > 0)
+                e.Mobile.SendMessage(0x3B1, $"[QuestSystem] {realigned} quest(s) em andamento realinhada(s) com as novas definições.");
         }
 
         [Usage("questlist")]
