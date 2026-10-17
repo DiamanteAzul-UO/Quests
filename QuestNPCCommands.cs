@@ -13,6 +13,7 @@ using Server.Mobiles;
 using Server.Targeting;
 using Server.Custom.QuestSystem.Conversation;
 using Server.Custom.QuestSystem.NPCs;
+using Server.Custom.QuestSystem.Quests;
 
 namespace Server.Custom.QuestSystem
 {
@@ -24,13 +25,70 @@ namespace Server.Custom.QuestSystem
         /// <summary>
         /// Registra comandos de NPC
         /// </summary>
+        private static bool _initialized;
+
         public static void Initialize()
         {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+
             CommandSystem.Register("addquestnpc", AccessLevel.GameMaster, AddQuestNPC_OnCommand);
             CommandSystem.Register("questnpcset", AccessLevel.GameMaster, QuestNPCSet_OnCommand);
             CommandSystem.Register("questnpcaddquest", AccessLevel.GameMaster, QuestNPCAddQuest_OnCommand);
             CommandSystem.Register("questnpctalk", AccessLevel.GameMaster, QuestNPCTalk_OnCommand);
         }
+
+        #region Helpers
+
+        /// <summary>
+        /// Associa automaticamente ao NPC todas as quests cujo giverId ou
+        /// turnInId corresponda ao QuestNpcId recém-definido.
+        ///
+        /// É o que fecha o ciclo do arquivo Fortaleza_Abalada_NPCS.txt: os NPCs
+        /// eram criados pelo nome de exibição e nunca recebiam as quests, porque
+        /// a ligação dependia de [questnpcaddquest um a um — e mesmo assim só
+        /// funcionava se o NPC tivesse um id, que não existia.
+        /// </summary>
+        private static int AutoBindQuestsById(QuestNPC npc)
+        {
+            if (npc == null || string.IsNullOrWhiteSpace(npc.QuestNpcId))
+                return 0;
+
+            int added = 0;
+
+            foreach (var quest in QuestRepository.Instance.GetAllQuests())
+            {
+                if (quest == null || string.IsNullOrEmpty(quest.Id))
+                    continue;
+
+                bool giver = NpcIdMatches(quest.GiverNpcId, npc);
+                bool turnIn = NpcIdMatches(quest.TurnInNpcId, npc);
+
+                if (!giver && !turnIn)
+                    continue;
+
+                if (npc.HasQuest(quest.Id))
+                    continue;
+
+                npc.AddQuest(quest.Id);
+                added++;
+            }
+
+            return added;
+        }
+
+        private static bool NpcIdMatches(string declaredId, QuestNPC npc)
+        {
+            if (string.IsNullOrWhiteSpace(declaredId) || npc == null)
+                return false;
+
+            return QuestManager.MatchesNpc(declaredId, null, npc,
+                QuestManager.GetNpcIdentifiers(npc, npc.Serial.ToString()));
+        }
+
+        #endregion
 
         #region Commands
 
@@ -55,13 +113,13 @@ namespace Server.Custom.QuestSystem
         /// [questnpcset - Configura propriedades do NPC
         /// </summary>
         [Usage("questnpcset <propriedade> <valor>")]
-        [Description("Configura uma propriedade do QuestNPC. Propriedades: bio, location, range")]
+        [Description("Configura uma propriedade do QuestNPC. Propriedades: npcid, bio, location, range, speechhue")]
         private static void QuestNPCSet_OnCommand(CommandEventArgs e)
         {
             if (e.Arguments.Length < 2)
             {
                 e.Mobile.SendMessage(QuestConstants.HueWarning, "Uso: [questnpcset <propriedade> <valor>");
-                e.Mobile.SendMessage(QuestConstants.HueInfo, "Propriedades: bio, location, range, speechhue");
+                e.Mobile.SendMessage(QuestConstants.HueInfo, "Propriedades: npcid, bio, location, range, speechhue");
                 return;
             }
 
@@ -170,6 +228,37 @@ namespace Server.Custom.QuestSystem
 
                 switch (_property)
                 {
+                    // Vincula o NPC ao identificador estavel usado nos JSON de
+                    // quest ("npc_capita_maelis", "npc_enfermeira_sera"...).
+                    //
+                    // Sem isto, os objetivos TalkTo/Deliver e a entrega so
+                    // podiam casar pelo serial do NPC — que muda a cada respawn —
+                    // ou pelo nome de exibicao exato. Era por isso que
+                    // "Fale com Olin nas Docas" nunca recebia progresso: os NPCs
+                    // criados por Fortaleza_Abalada_NPCS.txt nao tinham id nenhum.
+                    case "npcid":
+                    case "id":
+                        if (string.IsNullOrWhiteSpace(_value))
+                        {
+                            from.SendMessage(QuestConstants.HueError, "Uso: [questnpcset npcid <id>");
+                            break;
+                        }
+
+                        npc.QuestNpcId = _value.Trim();
+                        npc.IsQuestGiver = true;
+
+                        // Reaproveita as quests declaradas por este id nos JSON
+                        int bound = AutoBindQuestsById(npc);
+
+                        from.SendMessage(QuestConstants.HueSuccess,
+                            $"NPC vinculado ao id '{npc.QuestNpcId}'" +
+                            (bound > 0 ? $" ({bound} quest(s) associada(s) automaticamente)." : "."));
+
+                        if (bound == 0)
+                            from.SendMessage(QuestConstants.HueInfo,
+                                "Nenhuma quest declara este id como giver. Confira os JSON em Data/Quests.");
+                        break;
+
                     case "bio":
                         npc.BehaviorConfig.Bio = _value;
                         from.SendMessage(QuestConstants.HueSuccess, $"Bio definida: {_value}");
@@ -206,7 +295,7 @@ namespace Server.Custom.QuestSystem
 
                     default:
                         from.SendMessage(QuestConstants.HueWarning, $"Propriedade desconhecida: {_property}");
-                        from.SendMessage(QuestConstants.HueInfo, "Propriedades: bio, location, range, speechhue");
+                        from.SendMessage(QuestConstants.HueInfo, "Propriedades: npcid, bio, location, range, speechhue");
                         break;
                 }
             }
@@ -229,6 +318,25 @@ namespace Server.Custom.QuestSystem
                 if (!(targeted is QuestNPC npc))
                 {
                     from.SendMessage(QuestConstants.HueError, "Alvo deve ser um QuestNPC.");
+                    return;
+                }
+
+                // Correção: o comando aceitava qualquer string. Um questId
+                // digitado errado criava um NPC que oferecia uma quest
+                // inexistente — e o jogador ficava sem entender por que nada
+                // acontecia. Agora o id é validado contra o repositório.
+                if (QuestRepository.Instance.GetQuest(_questId) == null)
+                {
+                    from.SendMessage(QuestConstants.HueError,
+                        $"A quest '{_questId}' não existe em Data/Quests.");
+
+                    var sugestoes = QuestRepository.Instance.GetAllQuests();
+                    if (sugestoes != null && sugestoes.Count > 0)
+                    {
+                        from.SendMessage(QuestConstants.HueInfo,
+                            "Use [questlist para ver os ids disponíveis.");
+                    }
+
                     return;
                 }
 

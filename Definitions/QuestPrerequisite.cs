@@ -98,7 +98,16 @@ namespace Server.Custom.QuestSystem.Quests
         #region Methods
 
         /// <summary>
-        /// Verifica se jogador atende aos pré-requisitos
+        /// Verifica se jogador atende aos pré-requisitos.
+        ///
+        /// Correções desta revisão:
+        ///  - MinLevel, RequiredFaction, RequiredGuild e AllowedRaces eram lidos
+        ///    do JSON mas nunca verificados (agora são).
+        ///  - FailMessage definido pelo GM é usado quando presente.
+        ///  - HasItem passa a procurar no inventário inteiro (sub-containers
+        ///    incluídos) e reconhece itens de quest virtuais pela tag, não só
+        ///    pelo nome — antes, "SeloFortaleza" nunca era encontrado porque o
+        ///    item se chama "Selo da Fortaleza".
         /// </summary>
         public bool Check(PlayerMobile player, out string failReason)
         {
@@ -111,14 +120,30 @@ namespace Server.Custom.QuestSystem.Quests
             }
 
             // Verifica quests completas
-            // TODO: Integrar com QuestManager
-
             foreach (string questId in RequiredQuests)
             {
+                if (string.IsNullOrWhiteSpace(questId))
+                    continue;
+
                 var playerData = QuestManager.Instance.GetPlayerData(player);
                 if (playerData == null || !playerData.HasCompletedQuest(questId))
                 {
-                    failReason = "Voce precisa completar a missao anterior primeiro.";
+                    failReason = Fail("Voce precisa completar a missao anterior primeiro.");
+                    return false;
+                }
+            }
+
+            // Nível mínimo. O ServUO puro não tem sistema de level, então a
+            // verificação usa uma propriedade "Level"/"ExpLevel" quando o shard
+            // a fornece. Se não existir, o requisito é ignorado — falhar aqui
+            // tornaria a quest impossível para sempre.
+            if (MinLevel > 0)
+            {
+                int level = ReadLevel(player);
+
+                if (level >= 0 && level < MinLevel)
+                {
+                    failReason = Fail($"Voce precisa ser nivel {MinLevel}.");
                     return false;
                 }
             }
@@ -126,42 +151,40 @@ namespace Server.Custom.QuestSystem.Quests
             // Verifica fama
             if (MinFame > 0 && player.Fame < MinFame)
             {
-                failReason = $"Voce precisa de pelo menos {MinFame} de fama.";
+                failReason = Fail($"Voce precisa de pelo menos {MinFame} de fama.");
                 return false;
             }
 
             // Verifica karma mínimo
             if (MinKarma.HasValue && player.Karma < MinKarma.Value)
             {
-                failReason = $"Seu karma e muito baixo para esta missao.";
+                failReason = Fail("Voce precisa de karma mais alto para esta missao.");
                 return false;
             }
 
             // Verifica karma máximo
             if (MaxKarma.HasValue && player.Karma > MaxKarma.Value)
             {
-                failReason = $"Seu karma e muito alto para esta missao.";
+                failReason = Fail("Seu karma e alto demais para esta missao.");
                 return false;
             }
 
             // Verifica skill mínima principal
-            if (MinSkill != null && MinSkill.Value > 0)
+            if (MinSkill != null && MinSkill.Value > 0 && !HasSkillValue(player, MinSkill))
             {
-                double playerSkill = player.Skills[MinSkill.Skill].Value;
-                if (playerSkill < MinSkill.Value)
-                {
-                    failReason = $"Voce precisa de {MinSkill.Value} em {MinSkill.SkillName}.";
-                    return false;
-                }
+                failReason = Fail($"Voce precisa de {MinSkill.Value:F1} em {MinSkill.SkillName}.");
+                return false;
             }
 
             // Verifica lista de skills
             foreach (var req in RequiredSkills)
             {
-                double playerSkill = player.Skills[req.Skill].Value;
-                if (playerSkill < req.Value)
+                if (req == null || req.Value <= 0)
+                    continue;
+
+                if (!HasSkillValue(player, req))
                 {
-                    failReason = $"Voce precisa de {req.Value} em {req.SkillName}.";
+                    failReason = Fail($"Voce precisa de {req.Value:F1} em {req.SkillName}.");
                     return false;
                 }
             }
@@ -169,14 +192,135 @@ namespace Server.Custom.QuestSystem.Quests
             // Verifica itens
             foreach (var item in RequiredItems)
             {
+                if (item == null || string.IsNullOrWhiteSpace(item.Type))
+                    continue;
+
                 if (!HasItem(player, item))
                 {
-                    failReason = $"Voce precisa de {item.Amount}x {item.Name}.";
+                    string label = !string.IsNullOrWhiteSpace(item.Name) ? item.Name : item.Type;
+                    failReason = Fail($"Voce precisa de {item.Amount}x {label}.");
+                    return false;
+                }
+            }
+
+            // Facção
+            if (!string.IsNullOrWhiteSpace(RequiredFaction))
+            {
+                var faction = Server.Factions.Faction.Find(player);
+                bool member = false;
+
+                if (faction != null && faction.Definition != null)
+                {
+                    member = EqualsIgnoreCase(faction.Definition.FriendlyName, RequiredFaction) ||
+                             EqualsIgnoreCase(faction.Definition.Keyword, RequiredFaction) ||
+                             EqualsIgnoreCase(faction.Definition.Abbreviation, RequiredFaction);
+                }
+
+                if (!member)
+                {
+                    failReason = Fail($"Esta missao e apenas para {RequiredFaction}.");
+                    return false;
+                }
+            }
+
+            // Guilda
+            if (!string.IsNullOrWhiteSpace(RequiredGuild))
+            {
+                string guildName = player.Guild != null ? player.Guild.Name : null;
+                string guildAbbr = player.Guild != null ? player.Guild.Abbreviation : null;
+
+                if (!EqualsIgnoreCase(guildName, RequiredGuild) && !EqualsIgnoreCase(guildAbbr, RequiredGuild))
+                {
+                    failReason = Fail($"Esta missao e apenas para membros de {RequiredGuild}.");
+                    return false;
+                }
+            }
+
+            // Raças permitidas
+            if (AllowedRaces.Count > 0)
+            {
+                string raceName = player.Race != null ? player.Race.Name : null;
+                bool allowed = false;
+
+                foreach (string race in AllowedRaces)
+                {
+                    if (string.IsNullOrWhiteSpace(race))
+                        continue;
+
+                    if (raceName != null && raceName.Equals(race, StringComparison.OrdinalIgnoreCase))
+                    {
+                        allowed = true;
+                        break;
+                    }
+
+                    // Aceita também "Human"/"Elf"/"Gargoyle" escritos à mão
+                    if (raceName != null &&
+                        QuestItemMatcher.Normalize(raceName).Contains(QuestItemMatcher.Normalize(race)))
+                    {
+                        allowed = true;
+                        break;
+                    }
+                }
+
+                if (!allowed)
+                {
+                    failReason = Fail("Sua raca nao pode fazer esta missao.");
                     return false;
                 }
             }
 
             return true;
+        }
+
+        private string Fail(string defaultMessage)
+        {
+            return string.IsNullOrWhiteSpace(FailMessage) ? defaultMessage : FailMessage;
+        }
+
+        private static bool EqualsIgnoreCase(string a, string b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+                return false;
+
+            return a.Trim().Equals(b.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Lê o level do jogador. Retorna -1 quando o shard não tem sistema de
+        /// level, sinalizando que o requisito deve ser ignorado.
+        /// </summary>
+        private static int ReadLevel(PlayerMobile player)
+        {
+            foreach (string propertyName in new[] { "Level", "ExpLevel", "PlayerLevel" })
+            {
+                try
+                {
+                    var property = player.GetType().GetProperty(propertyName,
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+                    if (property != null && property.PropertyType == typeof(int))
+                    {
+                        object value = property.GetValue(player, null);
+                        if (value != null)
+                            return (int)value;
+                    }
+                }
+                catch
+                {
+                    // ignora e tenta o próximo nome
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool HasSkillValue(PlayerMobile player, SkillRequirement req)
+        {
+            if (player == null || req == null)
+                return false;
+
+            var skill = player.Skills[req.Skill];
+            return skill != null && skill.Value >= req.Value;
         }
 
         /// <summary>
@@ -186,60 +330,33 @@ namespace Server.Custom.QuestSystem.Quests
         {
             return RequiredQuests.Count > 0 || MinLevel > 0 || MinSkill != null ||
                    RequiredSkills.Count > 0 || MinFame > 0 || MinKarma.HasValue ||
-                   RequiredItems.Count > 0;
+                   MaxKarma.HasValue || RequiredItems.Count > 0 ||
+                   AllowedRaces.Count > 0 ||
+                   !string.IsNullOrWhiteSpace(RequiredFaction) ||
+                   !string.IsNullOrWhiteSpace(RequiredGuild);
         }
 
         /// <summary>
-        /// Verifica se jogador tem item - suporta tipos custom por nome
+        /// Verifica se o jogador possui o item exigido.
+        ///
+        /// Usa o QuestItemMatcher, que cobre três casos de uma vez:
+        ///  1. classe real do ServUO ("Apple", "Bandage", "IronOre");
+        ///  2. classe custom do shard presente no assembly;
+        ///  3. item virtual de quest ("SeloFortaleza", "CartaLacradaOlin") —
+        ///     representado por QuestItem com tag, que é como o sistema entrega
+        ///     esses itens nas recompensas e nos grantItems.
+        ///
+        /// A busca percorre o inventário inteiro, não só o primeiro nível da
+        /// mochila, e respeita a hue quando declarada.
         /// </summary>
         private bool HasItem(PlayerMobile player, RequiredItem req)
         {
-            if (player?.Backpack == null)
+            if (player == null || player.Deleted || req == null)
                 return false;
 
-            Type itemType = ScriptCompiler.FindTypeByName(req.Type);
+            int amount = req.Amount > 0 ? req.Amount : 1;
 
-            if (itemType != null)
-            {
-                // Tipo existe no ServUO - busca normal
-                Item[] items = player.Backpack.FindItemsByType(itemType);
-                int total = 0;
-
-                foreach (Item item in items)
-                {
-                    if (req.Hue == 0 || item.Hue == req.Hue)
-                        total += item.Amount;
-                }
-
-                return total >= req.Amount;
-            }
-
-            // Tipo custom - busca por nome
-            int count = 0;
-
-            foreach (Item item in player.Backpack.Items)
-            {
-                if (item == null || item.Deleted)
-                    continue;
-
-                bool matches = false;
-
-                if (item.Name != null && item.Name.IndexOf(req.Type, StringComparison.OrdinalIgnoreCase) >= 0)
-                    matches = true;
-
-                if (!matches && item is QuestItem qi &&
-                    qi.QuestItemType != null &&
-                    qi.QuestItemType.Equals(req.Type, StringComparison.OrdinalIgnoreCase))
-                    matches = true;
-
-                if (matches)
-                {
-                    if (req.Hue == 0 || item.Hue == req.Hue)
-                        count += item.Amount;
-                }
-            }
-
-            return count >= req.Amount;
+            return QuestItemMatcher.CountInPack(player, req.Type, req.Name, req.Hue) >= amount;
         }
         /// <summary>
         /// Clona pré-requisitos

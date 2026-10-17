@@ -11,8 +11,15 @@ namespace Server.Gumps
 {
     public class QuestLogGump : Gump
     {
+        private static bool _initialized;
+
         public static void Initialize()
         {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+
             Timer.DelayCall(TimeSpan.FromSeconds(1.0), () =>
             {
                 PacketHandlers.RegisterEncoded(0x32, true, DirectQuestButton);

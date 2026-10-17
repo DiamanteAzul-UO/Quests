@@ -8,8 +8,15 @@ namespace Server.Custom.QuestSystem
 {
     public static class QuestTrackerCommand
     {
+        private static bool _initialized;
+
         public static void Initialize()
         {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+
             CommandSystem.Register("missoes", AccessLevel.Player, OnCommand);
             CommandSystem.Register("quests", AccessLevel.Player, OnCommand);
             CommandSystem.Register("objetivos", AccessLevel.Player, OnCommand);

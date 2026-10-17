@@ -75,29 +75,82 @@ namespace Server.Custom.QuestSystem
         }
 
         /// <summary>
-        /// Obtém quests prontas para entregar para um NPC específico
+        /// Obtém quests prontas para entregar a um NPC específico.
+        ///
+        /// Correção crítica: a comparação antiga era
+        /// <c>definition.TurnInNpcId.Equals(npcId)</c> onde <c>npcId</c> era
+        /// <c>Serial.ToString()</c> ("12345") e <c>TurnInNpcId</c> era algo como
+        /// "npc_capita_maelis". Quando o NPC que entrega não era o mesmo que
+        /// ofereceu a quest, ela NUNCA aparecia como entregável — a quest ficava
+        /// concluída no progresso, mas impossível de finalizar.
+        ///
+        /// Agora a identificação usa os mesmos critérios dos objetivos TalkTo e
+        /// Deliver: id declarado no NPC (IQuestNpcIdentity), serial decimal,
+        /// serial hexadecimal e nome de exibição.
         /// </summary>
         public static List<ActiveQuest> GetQuestsReadyToTurnIn(this PlayerMobile player, string npcId)
+        {
+            Mobile npc = null;
+
+            uint serialValue;
+            if (!string.IsNullOrEmpty(npcId) && uint.TryParse(npcId, out serialValue))
+                npc = World.FindMobile(new Serial(serialValue));
+
+            return FilterTurnIn(player, npc, npcId);
+        }
+
+        /// <summary>Sobrecarga que recebe o NPC diretamente (forma recomendada).</summary>
+        public static List<ActiveQuest> GetQuestsReadyToTurnIn(this PlayerMobile player, Mobile npc)
+        {
+            return FilterTurnIn(player, npc, npc != null ? npc.Serial.ToString() : null);
+        }
+
+        private static List<ActiveQuest> FilterTurnIn(PlayerMobile player, Mobile npc, string npcId)
         {
             var readyQuests = player.GetQuestsReadyToTurnIn();
             var result = new List<ActiveQuest>();
 
+            List<string> identifiers = QuestManager.GetNpcIdentifiers(npc, npcId);
+
             foreach (var active in readyQuests)
             {
                 var definition = QuestRepository.Instance.GetQuest(active.QuestId);
-                if (definition != null)
-                {
-                    // Verifica se este NPC é o de entrega
-                    if (string.IsNullOrEmpty(definition.TurnInNpcId) || 
-                        definition.TurnInNpcId.Equals(npcId, StringComparison.OrdinalIgnoreCase) ||
-                        definition.TurnInNpcId.Equals(definition.GiverNpcId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        result.Add(active);
-                    }
-                }
+                if (definition == null)
+                    continue;
+
+                if (IsTurnInNpc(definition, npc, identifiers))
+                    result.Add(active);
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Diz se o NPC é o responsável por receber a entrega da quest.
+        /// Quando a definição não declara NPC de entrega, aceita-se o NPC que
+        /// ofereceu a quest e, na ausência de qualquer declaração, qualquer NPC
+        /// de quest — melhor entregar do que travar a quest para sempre.
+        /// </summary>
+        private static bool IsTurnInNpc(QuestDefinition definition, Mobile npc, List<string> identifiers)
+        {
+            if (definition == null)
+                return false;
+
+            bool declaresTurnIn = !string.IsNullOrWhiteSpace(definition.TurnInNpcId) ||
+                                  !string.IsNullOrWhiteSpace(definition.TurnInNpcName);
+
+            if (!declaresTurnIn)
+            {
+                declaresTurnIn = !string.IsNullOrWhiteSpace(definition.GiverNpcId) ||
+                                 !string.IsNullOrWhiteSpace(definition.GiverNpcName);
+
+                if (!declaresTurnIn)
+                    return true;
+
+                return QuestManager.MatchesNpc(definition.GiverNpcId, definition.GiverNpcName, npc, identifiers);
+            }
+
+            return QuestManager.MatchesNpc(definition.TurnInNpcId, definition.TurnInNpcName, npc, identifiers);
         }
 
         #endregion

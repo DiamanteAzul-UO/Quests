@@ -138,7 +138,31 @@ namespace Server.Custom.QuestSystem.Quests
         /// </summary>
         public List<ActiveQuest> GetReadyToTurnIn()
         {
-            return ActiveQuests.FindAll(q => q.Status == QuestStatus.ReadyToTurnIn);
+            // Não confia apenas no Status gravado: saves antigos (ou quests cujos
+            // objetivos foram completados antes desta correção) podem estar com
+            // Status == Active mesmo tendo tudo concluído. Nesse caso a quest
+            // nunca apareceria como entregável e ficaria travada para sempre.
+            return ActiveQuests.FindAll(q =>
+            {
+                if (q == null)
+                    return false;
+
+                if (q.Status == QuestStatus.ReadyToTurnIn)
+                    return true;
+
+                if (q.Status != QuestStatus.Active)
+                    return false;
+
+                var definition = QuestRepository.Instance.GetQuest(q.QuestId);
+                if (definition == null)
+                    return false;
+
+                if (!definition.AreObjectivesComplete(q.Progress))
+                    return false;
+
+                q.Status = QuestStatus.ReadyToTurnIn;
+                return true;
+            });
         }
 
         /// <summary>
@@ -163,21 +187,48 @@ namespace Server.Custom.QuestSystem.Quests
 
             ActiveQuests.Remove(active);
 
-            var completed = new CompletedQuest
-            {
-                QuestId = questId,
-                QuestName = active.QuestName,
-                CompletedAt = DateTime.UtcNow,
-                CompletionCount = GetCompletionCount(questId) + 1,
-                CanRepeat = definition.Repeatable
-            };
+            // Correção crítica: antes era criado um NOVO CompletedQuest a cada
+            // entrega com CompletionCount = GetCompletionCount(questId) + 1, e
+            // GetCompletionCount somava todas as entradas. O resultado crescia
+            // 1, 3, 7, 15... e estourava MaxCompletions já na segunda
+            // repetição, bloqueando para sempre qualquer quest repetível.
+            var existing = CompletedQuests.Find(q =>
+                string.Equals(q.QuestId, questId, StringComparison.OrdinalIgnoreCase));
 
-            if (definition.Repeatable && definition.CooldownHours > 0)
+            CompletedQuest completed;
+
+            if (existing != null)
             {
-                completed.CooldownEndsAt = DateTime.UtcNow.AddHours(definition.CooldownHours);
+                completed = existing;
+                completed.QuestName = active.QuestName;
+                completed.CompletedAt = DateTime.UtcNow;
+                completed.CompletionCount++;
+                completed.CanRepeat = definition.Repeatable;
+            }
+            else
+            {
+                completed = new CompletedQuest
+                {
+                    QuestId = questId,
+                    QuestName = active.QuestName,
+                    CompletedAt = DateTime.UtcNow,
+                    CompletionCount = 1,
+                    CanRepeat = definition.Repeatable
+                };
+
+                CompletedQuests.Add(completed);
             }
 
-            CompletedQuests.Add(completed);
+            if (definition.Repeatable && definition.CooldownHours > 0)
+                completed.CooldownEndsAt = DateTime.UtcNow.AddHours(definition.CooldownHours);
+            else
+                completed.CooldownEndsAt = null;
+
+            // Falhas anteriores não devem continuar valendo depois que a quest
+            // é finalmente concluída.
+            FailedQuests.RemoveAll(q => q != null &&
+                string.Equals(q.QuestId, questId, StringComparison.OrdinalIgnoreCase));
+
             Statistics.TotalQuestsCompleted++;
 
             return completed;
@@ -188,7 +239,11 @@ namespace Server.Custom.QuestSystem.Quests
         /// </summary>
         public bool HasCompletedQuest(string questId)
         {
-            return CompletedQuests.Exists(q => q.QuestId == questId);
+            if (string.IsNullOrEmpty(questId))
+                return false;
+
+            return CompletedQuests.Exists(q => q != null &&
+                string.Equals(q.QuestId, questId, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -196,10 +251,17 @@ namespace Server.Custom.QuestSystem.Quests
         /// </summary>
         public int GetCompletionCount(string questId)
         {
-            var completed = CompletedQuests.FindAll(q => q.QuestId == questId);
+            if (string.IsNullOrEmpty(questId))
+                return 0;
+
             int count = 0;
-            foreach (var c in completed)
-                count += c.CompletionCount;
+
+            foreach (var c in CompletedQuests)
+            {
+                if (c != null && string.Equals(c.QuestId, questId, StringComparison.OrdinalIgnoreCase))
+                    count += Math.Max(1, c.CompletionCount);
+            }
+
             return count;
         }
 
@@ -492,13 +554,18 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Verifica se quest está completa
+        /// Verifica se quest está pronta para ser entregue.
+        /// Objetivos opcionais (IsOptional) NAO bloqueiam a conclusão.
         /// </summary>
         public void CheckCompletion()
         {
             bool allComplete = true;
+
             foreach (var obj in Progress)
             {
+                if (obj.IsOptional)
+                    continue;
+
                 if (!obj.IsComplete)
                 {
                     allComplete = false;
@@ -510,11 +577,16 @@ namespace Server.Custom.QuestSystem.Quests
             {
                 Status = QuestStatus.ReadyToTurnIn;
             }
+            else if (Status == QuestStatus.ReadyToTurnIn)
+            {
+                // Regrediu (ex.: item de coleta foi consumido/perdido antes da entrega)
+                Status = QuestStatus.Active;
+            }
         }
 
         public void Serialize(GenericWriter writer)
         {
-            writer.Write(1); // Versão
+            writer.Write(2); // Versão
 
             writer.Write(QuestId ?? "");
             writer.Write(QuestName ?? "");
@@ -536,6 +608,10 @@ namespace Server.Custom.QuestSystem.Quests
                 writer.Write(p.Required);
                 writer.Write(p.IsComplete);
                 writer.Write(p.Description ?? "");
+
+                // version 2
+                writer.Write(p.IsOptional);
+                writer.Write(p.IsHidden);
             }
         }
 
@@ -559,7 +635,7 @@ namespace Server.Custom.QuestSystem.Quests
             Progress = new List<ObjectiveProgress>();
             for (int i = 0; i < count; i++)
             {
-                Progress.Add(new ObjectiveProgress
+                var progress = new ObjectiveProgress
                 {
                     Index = reader.ReadInt(),
                     Type = (ObjectiveType)reader.ReadInt(),
@@ -567,7 +643,15 @@ namespace Server.Custom.QuestSystem.Quests
                     Required = reader.ReadInt(),
                     IsComplete = reader.ReadBool(),
                     Description = reader.ReadString()
-                });
+                };
+
+                if (version >= 2)
+                {
+                    progress.IsOptional = reader.ReadBool();
+                    progress.IsHidden = reader.ReadBool();
+                }
+
+                Progress.Add(progress);
             }
         }
     }

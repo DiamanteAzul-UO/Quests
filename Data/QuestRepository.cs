@@ -84,8 +84,15 @@ namespace Server.Custom.QuestSystem.Quests
         /// <summary>
         /// Inicializa o repositório
         /// </summary>
+        private static bool _initialized;
+
         public static void Initialize()
         {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+
             Instance.LoadQuests();
             RegisterCommands();
         }
@@ -118,23 +125,25 @@ namespace Server.Custom.QuestSystem.Quests
                 // Adiciona ao repositório
                 _quests[quest.Id] = quest;
 
-                // Indexa por chain
+                // Indexa por chain (sem duplicar: reloads repetidos inflavam a lista)
                 if (!string.IsNullOrEmpty(quest.ChainId))
                 {
                     if (!_questChains.ContainsKey(quest.ChainId))
                         _questChains[quest.ChainId] = new List<string>();
-                    
-                    _questChains[quest.ChainId].Add(quest.Id);
+
+                    if (!_questChains[quest.ChainId].Contains(quest.Id))
+                        _questChains[quest.ChainId].Add(quest.Id);
                 }
 
-                // Indexa por NPC
-                if (!string.IsNullOrEmpty(quest.GiverNpcId))
-                {
-                    if (!_questsByNpc.ContainsKey(quest.GiverNpcId))
-                        _questsByNpc[quest.GiverNpcId] = new List<string>();
-                    
-                    _questsByNpc[quest.GiverNpcId].Add(quest.Id);
-                }
+                // Indexa por NPC — giver E turn-in.
+                //
+                // Correção: antes só o giver era indexado. Quando o NPC de
+                // entrega era diferente do que oferecia a quest (caso de
+                // quest_nh_bandagens: giver = Marcus, turn-in = Helena), a quest
+                // não aparecia na lista do NPC de entrega e o jogador nunca
+                // conseguia finalizá-la.
+                IndexByNpc(quest.GiverNpcId, quest.Id);
+                IndexByNpc(quest.TurnInNpcId, quest.Id);
             }
 
             // Ordena chains
@@ -150,6 +159,23 @@ namespace Server.Custom.QuestSystem.Quests
 
             _isLoaded = true;
             Console.WriteLine($"[QuestRepository] {_quests.Count} quests indexadas. {_questChains.Count} chains.");
+        }
+
+        /// <summary>Registra uma quest no índice de um NPC (sem duplicar).</summary>
+        private void IndexByNpc(string npcId, string questId)
+        {
+            if (string.IsNullOrWhiteSpace(npcId) || string.IsNullOrWhiteSpace(questId))
+                return;
+
+            List<string> list;
+            if (!_questsByNpc.TryGetValue(npcId, out list))
+            {
+                list = new List<string>();
+                _questsByNpc[npcId] = list;
+            }
+
+            if (!list.Contains(questId))
+                list.Add(questId);
         }
 
         /// <summary>
@@ -278,11 +304,8 @@ namespace Server.Custom.QuestSystem.Quests
             // Indexa por NPC
             if (!string.IsNullOrEmpty(quest.GiverNpcId))
             {
-                if (!_questsByNpc.ContainsKey(quest.GiverNpcId))
-                    _questsByNpc[quest.GiverNpcId] = new List<string>();
-
-                if (!_questsByNpc[quest.GiverNpcId].Contains(quest.Id))
-                    _questsByNpc[quest.GiverNpcId].Add(quest.Id);
+                IndexByNpc(quest.GiverNpcId, quest.Id);
+                IndexByNpc(quest.TurnInNpcId, quest.Id);
             }
         }
 
