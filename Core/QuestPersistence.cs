@@ -43,6 +43,30 @@ namespace Server.Custom.QuestSystem
         {
             try
             {
+                // Limpa ANTES de gravar: assim o que vai para o disco já está
+                // podado, e o arquivo não acumula entradas de personagens
+                // deletados indefinidamente.
+                //
+                // CleanupOldData existia como "TODO" vazio; depois de
+                // implementado continuou sem nenhum chamador — ou seja, o
+                // dicionário de dados de jogador ainda crescia sem teto.
+                // WorldSave é o gancho natural: já roda periodicamente e é o
+                // momento em que o estado vai ser persistido.
+                int days = QuestSystemConfig.Instance.CleanupAfterDays;
+
+                if (days > 0)
+                {
+                    try
+                    {
+                        QuestManager.Instance.CleanupOldData(TimeSpan.FromDays(days));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Falha na limpeza não pode impedir o save dos dados
+                        Console.WriteLine("[QuestPersistence] ERRO na limpeza de dados antigos: " + ex.Message);
+                    }
+                }
+
                 string dir = Path.GetDirectoryName(SavePath);
                 if (!Directory.Exists(dir))
                     Directory.CreateDirectory(dir);

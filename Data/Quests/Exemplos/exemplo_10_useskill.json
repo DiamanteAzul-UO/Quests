@@ -1,0 +1,45 @@
+{
+  "_meta": {
+    "objetivo": "UseSkill",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "RESSALVA_IMPORTANTE": "O ServUO so dispara EventSink.SkillCheck quando o teste e DESAFIADOR. Mobile_SkillCheckTarget retorna cedo (sem evento) quando value >= maxSkill ('no challenge') ou value < minSkill ('too difficult'). Um mestre na skill pode usar sem gerar evento algum.",
+    "por_isso": "requireSuccess=false conta qualquer teste disparado. Para a quest do ladino (arquivo 15) preferi Collect, que e garantido."
+  },
+  "identity": {
+    "id": "exemplo_useskill_rastrear",
+    "name": "Treino de Rastreamento",
+    "description": "Use a habilidade de rastrear 3 vezes para aprender a ler o chão.",
+    "category": "Profession",
+    "difficulty": "Easy"
+  },
+  "npcs": {
+    "giverId": "npc_lenhadora_tessa",
+    "giverName": "Lenhadora Tessa",
+    "turnInId": "npc_lenhadora_tessa",
+    "turnInName": "Lenhadora Tessa"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "UseSkill",
+      "description": "Use Tracking 3 vezes",
+      "skill": "Tracking",
+      "requireSuccess": false,
+      "required": 3
+    }
+  ],
+  "rewards": {
+    "gold": 70,
+    "experience": 130,
+    "skillGains": [
+      {
+        "skill": "Tracking",
+        "amount": 1.0
+      }
+    ]
+  }
+}

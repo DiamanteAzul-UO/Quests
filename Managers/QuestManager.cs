@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Server;
 using Server.Mobiles;
 using Server.Items;
@@ -167,6 +168,188 @@ namespace Server.Custom.QuestSystem.Quests
 
                 CheckTimeLimits(player);
             }
+        }
+
+        /// <summary>
+        /// Realinha o Progress snapshot de todas as quests ativas do jogador com a
+        /// definição atualmente carregada.
+        ///
+        /// Por que é necessário:
+        ///   ActiveQuest.Progress é uma CÓPIA tirada no aceite (CreateProgressList),
+        ///   não uma visão da definição. Existem 18 loops no sistema que iteram
+        ///   "i &lt; definition.Objectives.Count &amp;&amp; i &lt; active.Progress.Count".
+        ///
+        ///   Se um GM edita a quest — algo que o novo [editarquest facilita — e o
+        ///   número de objetivos muda, as duas listas divergem:
+        ///     • definição com MAIS objetivos: os novos nunca recebem progresso,
+        ///       porque o loop para no tamanho do Progress antigo;
+        ///     • definição com MENOS objetivos: sobram entradas órfãs no Progress,
+        ///       e CheckCompletion() itera sobre elas — uma entrada órfã nunca
+        ///       completa, então a quest fica travada PARA SEMPRE.
+        ///
+        ///   Sem reconciliar, editar uma quest em uso criava exatamente o sintoma
+        ///   que este sistema existe para eliminar: missão impossível de concluir.
+        /// </summary>
+        /// <returns>Quantas quests ativas foram ajustadas.</returns>
+        public int ReconcileProgress(PlayerMobile player)
+        {
+            if (player == null || player.Deleted)
+                return 0;
+
+            PlayerQuestData data;
+            if (!_playerData.TryGetValue(player.Serial, out data))
+                return 0;
+
+            if (data == null || data.ActiveQuests == null || data.ActiveQuests.Count == 0)
+                return 0;
+
+            int adjusted = 0;
+
+            foreach (var active in data.ActiveQuests.ToList())
+            {
+                if (active == null)
+                    continue;
+
+                var definition = QuestRepository.Instance.GetQuest(active.QuestId);
+
+                if (definition == null || definition.Objectives == null)
+                {
+                    // A quest saiu do JSON. Não apago o progresso do jogador —
+                    // destruir dado é pior que deixá-lo órfão, e o [questdiag
+                    // reporta o caso. Só registro.
+                    Console.WriteLine("[QuestManager] Reconcile: '" + active.QuestId +
+                                      "' de " + player.Name + " não existe mais no repositório.");
+                    continue;
+                }
+
+                if (ReconcileOne(active, definition))
+                    adjusted++;
+            }
+
+            if (adjusted > 0)
+            {
+                Console.WriteLine("[QuestManager] Reconcile: " + adjusted +
+                                  " quest(s) de " + player.Name + " realinhada(s) com a definição atual.");
+            }
+
+            return adjusted;
+        }
+
+        /// <summary>Realigns uma única quest ativa. Retorna true se algo mudou.</summary>
+        private static bool ReconcileOne(ActiveQuest active, QuestDefinition definition)
+        {
+            var objectives = definition.Objectives;
+
+            if (active.Progress == null)
+                active.Progress = new List<ObjectiveProgress>();
+
+            bool changed = false;
+
+            // ── 1. Sobram entradas órfãs (definição encolheu) ────────────────
+            while (active.Progress.Count > objectives.Count)
+            {
+                int last = active.Progress.Count - 1;
+                active.Progress.RemoveAt(last);
+                changed = true;
+            }
+
+            // ── 2. Atualiza as entradas existentes ───────────────────────────
+            for (int i = 0; i < active.Progress.Count; i++)
+            {
+                var progress = active.Progress[i];
+                var objective = objectives[i];
+
+                if (progress == null || objective == null)
+                    continue;
+
+                // Se o GM trocou o TIPO do objetivo naquele índice, o progresso
+                // acumulado era de outra tarefa — creditá-lo seria dar a quest de
+                // graça. Zera.
+                if (progress.Type != objective.Type)
+                {
+                    progress.Current = 0;
+                    changed = true;
+                }
+
+                progress.Index = i;
+                progress.Type = objective.Type;
+                progress.Description = objective.Description;
+                progress.IsOptional = objective.IsOptional;
+                progress.IsHidden = objective.IsHidden;
+
+                // Required pode ter mudado; Current precisa caber nele.
+                if (progress.Required != objective.Required)
+                {
+                    progress.Required = objective.Required;
+                    changed = true;
+                }
+
+                int clamped = Math.Max(0, Math.Min(progress.Current, Math.Max(0, objective.Required)));
+
+                if (clamped != progress.Current)
+                {
+                    progress.Current = clamped;
+                    changed = true;
+                }
+
+                bool complete = objective.Required <= 0 || progress.Current >= objective.Required;
+
+                if (progress.IsComplete != complete)
+                {
+                    progress.IsComplete = complete;
+                    changed = true;
+                }
+            }
+
+            // ── 3. Faltam entradas (definição cresceu) ───────────────────────
+            while (active.Progress.Count < objectives.Count)
+            {
+                int i = active.Progress.Count;
+                var objective = objectives[i];
+
+                active.Progress.Add(new ObjectiveProgress
+                {
+                    Index = i,
+                    Type = objective.Type,
+                    Current = 0,
+                    Required = objective.Required,
+                    IsComplete = objective.Required <= 0,
+                    IsOptional = objective.IsOptional,
+                    IsHidden = objective.IsHidden,
+                    Description = objective.Description
+                });
+
+                changed = true;
+            }
+
+            if (changed)
+                active.CheckCompletion();
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Reconcilia todos os jogadores online. Chamado após [questreload, que é
+        /// quando as definições acabaram de mudar sob quests já em andamento.
+        /// </summary>
+        public int ReconcileAllProgress()
+        {
+            int total = 0;
+
+            foreach (NetState state in NetState.Instances)
+            {
+                if (state == null)
+                    continue;
+
+                PlayerMobile player = state.Mobile as PlayerMobile;
+
+                if (player == null || player.Deleted)
+                    continue;
+
+                total += ReconcileProgress(player);
+            }
+
+            return total;
         }
 
         /// <summary>Limpa os avisos ja disparados de uma quest.</summary>
@@ -441,6 +624,21 @@ namespace Server.Custom.QuestSystem.Quests
             if (data == null)
                 return "";
 
+            // PlayerQuestData.GetStatusTag deriva o status sozinho, pelo caminho
+            // que NÃO consulta pré-requisitos — ele não tem acesso ao player.
+            // Isso deixaria uma quest bloqueada renderizando igual a uma
+            // disponível para qualquer script do shard que use esta API pública.
+            //
+            // Aqui o status vem de GetQuestStatus(player, questId), que é
+            // prerequisite-aware e devolve Locked quando Check() falha.
+            var status = GetQuestStatus(player, questId);
+
+            if (status == QuestStatus.Locked)
+                return "[BLOQUEADA]";
+
+            if (status == QuestStatus.Failed)
+                return "[FALHOU]";
+
             return data.GetStatusTag(questId);
         }
 
@@ -543,6 +741,11 @@ namespace Server.Custom.QuestSystem.Quests
 
             // Sincroniza Collect com o que o jogador JA tem no inventario
             SyncCollectObjectives(player, definition, activeQuest, notify: true);
+
+            // Sincroniza SkillGain: sem isto, quem JA tinha a skill acima do alvo
+            // ficava travado para sempre — o objetivo so credita em OnSkillGain,
+            // e um jogador no cap nunca mais ganha ponto naquela skill.
+            SyncSkillGainObjectives(player, definition, activeQuest, notify: true);
 
             // Avalia Explore imediatamente: o jogador pode ter aceitado a
             // missao ja em pe dentro da area (antes so o evento de movimento
@@ -1024,7 +1227,7 @@ namespace Server.Custom.QuestSystem.Quests
                     else
                         drop.MoveToWorld(killed.Location, killed.Map);
 
-                    Console.WriteLine("[QuestManager] Drop de quest gerado: " + collect.ItemType +
+                    QuestSystemConfig.Instance.LogVerbose("[QuestManager] Drop de quest gerado: " + collect.ItemType +
                                       " de " + killedType + " para " + player.Name);
                 }
             }
@@ -1829,8 +2032,7 @@ namespace Server.Custom.QuestSystem.Quests
                         continue;
 
                     // Verifica sistema de craft (vazio = qualquer um)
-                    if (!string.IsNullOrWhiteSpace(craftObj.CraftSkill) &&
-                        !craftObj.CraftSkill.Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
+                    if (!CraftSystemMatches(craftObj.CraftSkill, craftSystem))
                         continue;
 
                     // Verifica qualidade excepcional
@@ -1841,6 +2043,113 @@ namespace Server.Custom.QuestSystem.Quests
                 }
             }
         }
+
+        /// <summary>
+        /// Casa o "craftSkill" declarado no JSON com o sistema de craft que
+        /// realmente produziu o item.
+        ///
+        /// Por que não é uma comparação direta:
+        ///   QuestEventHandler passa como craftSystem o nome da CLASSE DA
+        ///   FERRAMENTA (e.Tool.GetType().Name), ou seja "SewingKit",
+        ///   "SmithyHammer", "DovetailSaw". Um GM que escreve o óbvio
+        ///   ("craftSkill": "Tailoring" ou "Blacksmith") nunca casava, e o
+        ///   objetivo Craft ficava impossível de concluir — sem nenhum aviso.
+        ///
+        ///   Aqui aceitamos os dois: o nome da ferramenta (comportamento antigo,
+        ///   preservado) ou o nome do ofício, traduzido pela tabela abaixo.
+        /// </summary>
+        /// <param name="declared">Valor de "craftSkill" no JSON; vazio = qualquer ofício.</param>
+        /// <param name="craftSystem">Nome da classe da ferramenta usada no craft.</param>
+        private static bool CraftSystemMatches(string declared, string craftSystem)
+        {
+            if (string.IsNullOrWhiteSpace(declared))
+                return true;    // sem exigência de ofício
+
+            if (string.IsNullOrWhiteSpace(craftSystem))
+                return false;   // exigiu ofício mas o evento não trouxe a ferramenta
+
+            declared = declared.Trim();
+
+            // 1) Nome exato da ferramenta (ex.: "SewingKit")
+            if (declared.Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // 2) Nome do ofício (ex.: "Tailoring") → ferramentas daquele ofício
+            string[] tools;
+
+            if (_craftToolsBySkill.TryGetValue(NormalizeCraftKey(declared), out tools))
+            {
+                for (int i = 0; i < tools.Length; i++)
+                {
+                    if (tools[i].Equals(craftSystem, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True quando o valor declarado em "craftSkill" é reconhecido — seja um
+        /// nome de ofício da tabela, seja uma classe de ferramenta que exista no
+        /// shard.
+        ///
+        /// Exposto para o [questdiag] apontar erro de grafia ANTES de virar uma
+        /// quest impossível de concluir.
+        /// </summary>
+        public static bool IsKnownCraftSkill(string declared)
+        {
+            if (string.IsNullOrWhiteSpace(declared))
+                return false;
+
+            declared = declared.Trim();
+
+            if (_craftToolsBySkill.ContainsKey(NormalizeCraftKey(declared)))
+                return true;
+
+            return QuestItemMatcher.ResolveAnyType(declared) != null;
+        }
+
+        private static string NormalizeCraftKey(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return "";
+
+            var sb = new StringBuilder(value.Length);
+
+            foreach (char c in value)
+            {
+                if (char.IsLetterOrDigit(c))
+                    sb.Append(char.ToLowerInvariant(c));
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Ofício → classes de ferramenta que o representam.
+        /// Só entram aqui classes cuja existência foi confirmada no ServUO.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> _craftToolsBySkill =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                { "blacksmith",       new[] { "SmithyHammer", "SmithHammer", "RunicHammer", "AncientSmithyHammer", "WornHammer" } },
+                { "blacksmithing",    new[] { "SmithyHammer", "SmithHammer", "RunicHammer", "AncientSmithyHammer", "WornHammer" } },
+                { "smithing",         new[] { "SmithyHammer", "SmithHammer", "RunicHammer", "AncientSmithyHammer", "WornHammer" } },
+                { "tailoring",        new[] { "SewingKit", "RunicSewingKit" } },
+                { "tailor",           new[] { "SewingKit", "RunicSewingKit" } },
+                { "carpentry",        new[] { "DovetailSaw", "RunicDovetailSaw", "DrawKnife" } },
+                { "carpenter",        new[] { "DovetailSaw", "RunicDovetailSaw", "DrawKnife" } },
+                { "fletching",        new[] { "FletcherTools" } },
+                { "bowcraft",         new[] { "FletcherTools" } },
+                { "bowyer",           new[] { "FletcherTools" } },
+                { "alchemy",          new[] { "MortarPestle" } },
+                { "inscription",      new[] { "ScribesPen" } },
+                { "scribing",         new[] { "ScribesPen" } },
+                { "tinkering",        new[] { "TinkersTools" } },
+                { "tinker",           new[] { "TinkersTools" } },
+                { "cartography",      new[] { "MapmakersPen" } }
+            };
 
         /// <summary>
         /// Le a propriedade Quality (ItemQuality) de itens craftaveis via reflexao,
@@ -2151,7 +2460,7 @@ namespace Server.Custom.QuestSystem.Quests
                     // ── 4. Atualiza progresso ─────────────────────────────────
                     active.Progress[i].SetProgress(active.Progress[i].Required);
 
-                    Console.WriteLine("[QuestManager] Deliver OK: '" + deliverObj.ItemType + "' entregue a '" +
+                    QuestSystemConfig.Instance.LogVerbose("[QuestManager] Deliver OK: '" + deliverObj.ItemType + "' entregue a '" +
                                       npc.Name + "' por " + player.Name);
 
                     active.CheckCompletion();
@@ -2244,7 +2553,7 @@ namespace Server.Custom.QuestSystem.Quests
                 active.Progress[i].SetProgress(target);
                 anyUpdated = true;
 
-                Console.WriteLine("[QuestManager] SyncCollect: objetivo " + i + " '" + collectObj.ItemType +
+                QuestSystemConfig.Instance.LogVerbose("[QuestManager] SyncCollect: objetivo " + i + " '" + collectObj.ItemType +
                                   "' => " + active.Progress[i].Current + "/" + active.Progress[i].Required);
 
                 if (!notify || player.NetState == null)
@@ -2264,6 +2573,122 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
+        /// Credita objetivos SkillGain (modo ReachValue) cuja meta o jogador JA
+        /// atingiu antes de aceitar a quest.
+        ///
+        /// Por que é necessário:
+        ///   O objetivo só progredia em OnSkillGain. Um jogador que já tivesse a
+        ///   skill no valor alvo — ou no cap — nunca mais gerava ganho naquela
+        ///   skill, então o objetivo ficava em 0 para sempre e a quest era
+        ///   impossível de concluir. É a mesma classe de bug que Collect tinha
+        ///   (quem já carregava o item não contava), resolvida com SyncCollect.
+        ///
+        ///   O modo GainAmount mede ganhos FUTUROS por definição, então não é
+        ///   sincronizado aqui.
+        /// </summary>
+        private bool SyncSkillGainObjectives(PlayerMobile player, QuestDefinition definition, ActiveQuest active, bool notify = false)
+        {
+            if (player == null || player.Deleted || definition == null || active == null)
+                return false;
+
+            bool anyUpdated = false;
+
+            for (int i = 0; i < definition.Objectives.Count && i < active.Progress.Count; i++)
+            {
+                var gainObj = definition.Objectives[i] as SkillGainObjective;
+                if (gainObj == null)
+                    continue;
+
+                if (string.Equals(gainObj.Mode, "GainAmount", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (gainObj.TargetValue <= 0)
+                {
+                    Console.WriteLine("[QuestManager] SyncSkillGain: objetivo " + i + " de '" + definition.Id +
+                                      "' em modo ReachValue sem targetValue — nunca completa.");
+                    continue;
+                }
+
+                SkillName skill;
+                if (!TryResolveSkillName(gainObj.SkillName, gainObj.Skill, out skill))
+                {
+                    Console.WriteLine("[QuestManager] SyncSkillGain: objetivo " + i + " de '" + definition.Id +
+                                      "' com skill irresolvivel '" + gainObj.SkillName + "'.");
+                    continue;
+                }
+
+                Skill playerSkill = player.Skills[skill];
+                if (playerSkill == null)
+                    continue;
+
+                if (playerSkill.Value < gainObj.TargetValue)
+                    continue;
+
+                int target = gainObj.Required > 0 ? gainObj.Required : 1;
+
+                if (active.Progress[i].Current >= target)
+                    continue;
+
+                bool wasComplete = active.Progress[i].IsComplete;
+
+                active.Progress[i].SetProgress(target);
+                anyUpdated = true;
+
+                QuestSystemConfig.Instance.LogVerbose("[QuestManager] SyncSkillGain: objetivo " + i + " '" + skill +
+                                  "' ja em " + playerSkill.Value.ToString("F1") + " >= " +
+                                  gainObj.TargetValue.ToString("F1") + " => creditado.");
+
+                if (!notify || player.NetState == null)
+                    continue;
+
+                if (active.Progress[i].IsComplete && !wasComplete)
+                    QuestNotificationManager.Instance.NotifyObjectiveComplete(player, definition, gainObj);
+                else
+                    QuestNotificationManager.Instance.NotifyObjectiveProgress(
+                        player, definition, gainObj, active.Progress[i].Current, target);
+            }
+
+            if (anyUpdated)
+                active.CheckCompletion();
+
+            return anyUpdated;
+        }
+
+        /// <summary>
+        /// Resolve a skill de um objetivo para o enum do ServUO.
+        ///
+        /// Não usa o valor do enum como fallback cego: quando o loader não
+        /// consegue resolver o nome, ele deixa Skill no padrão (Alchemy) e
+        /// SkillName com o texto cru. Cair em Alchemy nesse caso faria o
+        /// objetivo medir a skill errada sem nenhum aviso.
+        /// </summary>
+        private static bool TryResolveSkillName(string skillName, SkillName fallback, out SkillName skill)
+        {
+            skill = SkillName.Alchemy;
+
+            if (!string.IsNullOrWhiteSpace(skillName))
+            {
+                SkillName parsed;
+
+                if (Enum.TryParse(skillName, true, out parsed) && Enum.IsDefined(typeof(SkillName), parsed))
+                {
+                    skill = parsed;
+                    return true;
+                }
+
+                return false;   // texto presente mas inválido: não adivinha
+            }
+
+            if (Enum.IsDefined(typeof(SkillName), fallback))
+            {
+                skill = fallback;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Consome itens (tipos reais ou virtuais). Mantido por compatibilidade.
         /// </summary>
         private void ConsumeItemsByName(PlayerMobile player, string itemTypeName, int hue, int toConsume)
@@ -2276,7 +2701,7 @@ namespace Server.Custom.QuestSystem.Quests
         /// </summary>
         private void GiveRewards(PlayerMobile player, QuestDefinition definition)
         {
-            Console.WriteLine($"[QuestSystem] GiveRewards chamado para quest: {definition?.Id}");
+            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] GiveRewards chamado para quest: {definition?.Id}");
 
             if (player == null || definition == null)
             {
@@ -2287,11 +2712,11 @@ namespace Server.Custom.QuestSystem.Quests
             var rewards = definition.Rewards;
             if (rewards == null)
             {
-                Console.WriteLine("[QuestSystem] Nenhuma recompensa configurada.");
+                QuestSystemConfig.Instance.LogVerbose("[QuestSystem] Nenhuma recompensa configurada.");
                 return;
             }
 
-            Console.WriteLine($"[QuestSystem] Gold: {rewards.Gold}, Fame: {rewards.Fame}, Items: {rewards.Items.Count}");
+            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Gold: {rewards.Gold}, Fame: {rewards.Fame}, Items: {rewards.Items.Count}");
 
             // Gold
             if (rewards.Gold > 0)
@@ -2302,7 +2727,7 @@ namespace Server.Custom.QuestSystem.Quests
                     {
                         Banker.Deposit(player, rewards.Gold);
                         player.SendMessage(0x40, $"Depositado {rewards.Gold} moedas de ouro em seu banco.");
-                        Console.WriteLine($"[QuestSystem] {rewards.Gold} gold depositado no banco.");
+                        QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] {rewards.Gold} gold depositado no banco.");
                     }
                     else
                     {
@@ -2311,7 +2736,7 @@ namespace Server.Custom.QuestSystem.Quests
                             Gold goldItem = new Gold(rewards.Gold);
                             player.Backpack.DropItem(goldItem);
                             player.SendMessage(0x40, $"Voce recebeu {rewards.Gold} moedas de ouro.");
-                            Console.WriteLine($"[QuestSystem] {rewards.Gold} gold adicionado na mochila.");
+                            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] {rewards.Gold} gold adicionado na mochila.");
                         }
                         else
                         {
@@ -2332,7 +2757,7 @@ namespace Server.Custom.QuestSystem.Quests
                 {
                     player.Fame += rewards.Fame;
                     player.SendMessage(0x40, $"Sua fama aumentou em {rewards.Fame}.");
-                    Console.WriteLine($"[QuestSystem] Fame +{rewards.Fame}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Fame +{rewards.Fame}");
                 }
                 catch (Exception ex)
                 {
@@ -2348,7 +2773,7 @@ namespace Server.Custom.QuestSystem.Quests
                     player.Karma += rewards.Karma;
                     string karmaMsg = rewards.Karma > 0 ? $"aumentou em {rewards.Karma}" : $"diminuiu em {Math.Abs(rewards.Karma)}";
                     player.SendMessage(0x40, $"Seu karma {karmaMsg}.");
-                    Console.WriteLine($"[QuestSystem] Karma {rewards.Karma}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Karma {rewards.Karma}");
                 }
                 catch (Exception ex)
                 {
@@ -2372,7 +2797,7 @@ namespace Server.Custom.QuestSystem.Quests
                     {
                         if (Utility.Random(100) >= rewardItem.Chance)
                         {
-                            Console.WriteLine($"[QuestSystem] Item {rewardItem.Type} falhou no teste de chance.");
+                            QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Item {rewardItem.Type} falhou no teste de chance.");
                             continue;
                         }
                     }
@@ -2397,7 +2822,7 @@ namespace Server.Custom.QuestSystem.Quests
                         if (onGround)
                             player.SendMessage(QuestConstants.HueWarning, "Sua mochila esta cheia! Item colocado no chao.");
 
-                        Console.WriteLine($"[QuestSystem] Item stackavel dado: {amount}x {rewardItem.Type}");
+                        QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Item stackavel dado: {amount}x {rewardItem.Type}");
                         continue;
                     }
 
@@ -2421,7 +2846,7 @@ namespace Server.Custom.QuestSystem.Quests
                     player.SendMessage(QuestConstants.HueSuccess, "Voce recebeu: {0}x {1}",
                         amount, rewardItem.Name ?? probe.Name ?? rewardItem.Type);
 
-                    Console.WriteLine($"[QuestSystem] Itens dados: {amount}x {rewardItem.Type}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Itens dados: {amount}x {rewardItem.Type}");
                 }
             }
 
@@ -2443,7 +2868,7 @@ namespace Server.Custom.QuestSystem.Quests
                         titleData.SetFlag("title_" + QuestItemMatcher.Normalize(titleReward.Title), true);
 
                     player.SendMessage(QuestConstants.HueSuccess, $"Voce recebeu o titulo: {titleReward.Title}");
-                    Console.WriteLine($"[QuestSystem] Titulo concedido: {titleReward.Title}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Titulo concedido: {titleReward.Title}");
                 }
             }
 
@@ -2480,7 +2905,7 @@ namespace Server.Custom.QuestSystem.Quests
                         skill.Base += skillReward.Amount;
                         player.SendMessage(QuestConstants.HueSuccess,
                             $"Sua habilidade {target} aumentou em {skillReward.Amount}.");
-                        Console.WriteLine($"[QuestSystem] Skill {target} +{skillReward.Amount}");
+                        QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Skill {target} +{skillReward.Amount}");
                     }
                     catch (Exception ex)
                     {
@@ -2501,17 +2926,17 @@ namespace Server.Custom.QuestSystem.Quests
                             case "str":
                                 player.RawStr += statReward.Amount;
                                 player.SendMessage(0x40, $"Sua forca aumentou em {statReward.Amount}.");
-                                Console.WriteLine($"[QuestSystem] STR +{statReward.Amount}");
+                                QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] STR +{statReward.Amount}");
                                 break;
                             case "dex":
                                 player.RawDex += statReward.Amount;
                                 player.SendMessage(0x40, $"Sua destreza aumentou em {statReward.Amount}.");
-                                Console.WriteLine($"[QuestSystem] DEX +{statReward.Amount}");
+                                QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] DEX +{statReward.Amount}");
                                 break;
                             case "int":
                                 player.RawInt += statReward.Amount;
                                 player.SendMessage(0x40, $"Sua inteligencia aumentou em {statReward.Amount}.");
-                                Console.WriteLine($"[QuestSystem] INT +{statReward.Amount}");
+                                QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] INT +{statReward.Amount}");
                                 break;
                         }
                     }
@@ -2530,11 +2955,11 @@ namespace Server.Custom.QuestSystem.Quests
                 {
                     data.SetFlag($"quest_unlocked_{questId}", true);
                     player.SendMessage(0x40, $"Nova missao desbloqueada!");
-                    Console.WriteLine($"[QuestSystem] Quest desbloqueada: {questId}");
+                    QuestSystemConfig.Instance.LogVerbose($"[QuestSystem] Quest desbloqueada: {questId}");
                 }
             }
 
-            Console.WriteLine("[QuestSystem] GiveRewards concluido com sucesso.");
+            QuestSystemConfig.Instance.LogVerbose("[QuestSystem] GiveRewards concluido com sucesso.");
         }
 
         /// <summary>

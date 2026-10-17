@@ -110,6 +110,12 @@ namespace Server.Custom.QuestSystem.Quests
                 // Quests com prazo podem ter expirado enquanto offline
                 QuestManager.Instance.CheckTimeLimits(pm);
 
+                // Um [questreload pode ter mudado as definicoes enquanto o
+                // jogador estava offline. ActiveQuest.Progress e um snapshot do
+                // aceite, entao sem realinhar aqui a quest editada ficaria
+                // impossivel de concluir.
+                QuestManager.Instance.ReconcileProgress(pm);
+
                 // O jogador pode ter logado dentro da area de um objetivo Explore
                 QuestManager.Instance.OnLocationEntered(pm, pm.Location, pm.Map);
 

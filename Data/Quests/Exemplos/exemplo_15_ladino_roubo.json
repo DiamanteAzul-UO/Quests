@@ -1,0 +1,78 @@
+{
+  "_meta": {
+    "objetivo": "Collect + pre-requisitos de skill",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "PEDIDO_DO_USUARIO": "Exemplo pedido: para um ladino roubar X item, a quest SO APARECE se o jogador tiver Stealing e Snooping.",
+    "como_funciona_o_gating": "GetQuestStatus agora retorna QuestStatus.Locked quando Prerequisites.Check falha. Antes, Locked existia no enum mas nunca era usado: a quest aparecia como disponivel para QUALQUER jogador e so barrava no aceite. A lista do NPC filtra por Available/Active, entao Locked some da lista.",
+    "por_que_Collect_e_nao_UseSkill": "Stealing usa CheckTargetSkill, que retorna cedo SEM disparar EventSink.SkillCheck quando nao ha desafio (value >= maxSkill) ou e dificil demais (value < minSkill). Um ladino habil roubando item leve nao geraria evento algum e o objetivo ficaria parado. Collect e creditado por OnItemObtained, que dispara quando o item roubado cai na mochila - caminho garantido.",
+    "limitacao_honesta": "Collect nao PROVA que o item foi roubado: comprar ou saquear o mesmo item tambem conta. Se o shard precisar dessa garantia, e necessario um gancho proprio no Stealing.cs chamando QuestManager."
+  },
+  "identity": {
+    "id": "exemplo_ladino_roubo_anel",
+    "name": "Trabalho de Sombra",
+    "description": "Olin sabe de um anel de ouro no bolso de um mercador. Traga-o — sem ser visto.",
+    "category": "Side",
+    "difficulty": "Hard"
+  },
+  "npcs": {
+    "giverId": "npc_mestre_docas_olin",
+    "giverName": "Mestre de Docas Olin",
+    "turnInId": "npc_mestre_docas_olin",
+    "turnInName": "Mestre de Docas Olin"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "prerequisites": {
+    "requiredSkills": [
+      {
+        "skill": "Stealing",
+        "value": 30.0
+      },
+      {
+        "skill": "Snooping",
+        "value": 30.0
+      }
+    ],
+    "minKarma": -1000,
+    "failMessage": "Você não tem mãos leves o bastante para este trabalho."
+  },
+  "objectives": [
+    {
+      "type": "Collect",
+      "description": "Consiga 1 anel de ouro",
+      "itemType": "GoldRing",
+      "itemName": "Anel de Ouro",
+      "required": 1,
+      "consumeOnComplete": true,
+      "markAsQuestItem": false
+    }
+  ],
+  "rewards": {
+    "gold": 500,
+    "karma": -100,
+    "fame": 15,
+    "experience": 600,
+    "items": [
+      {
+        "type": "Lockpick",
+        "name": "Gazuas",
+        "amount": 5
+      }
+    ]
+  },
+  "dialogue": {
+    "onOffer": [
+      "Baixa a voz. Tenho um serviço que exige dedos leves.",
+      "Um mercador anda com um anel que me interessa."
+    ],
+    "onDecline": [
+      "Então some daqui. E esquece essa conversa."
+    ],
+    "onComplete": [
+      "Lindo. Ninguém viu nada, certo? Certo."
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "objetivo": "Explore",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "ARMADILHA_IMPORTANTE": "NAO use 'locationHint' num objetivo Explore. O parser le locationHint como alias de locationName, e locationName vira exigencia de REGIAO combinada com E (nao OU) com as coordenadas. Como o texto da dica nao e nome de regiao, o objetivo nunca completaria. Use apenas 'description' para o texto.",
+    "detalhe": "Coordenadas reais do Haven Moongate (Trammel). InRange ignora o Z, entao a altitude nao precisa ser exata."
+  },
+  "identity": {
+    "id": "exemplo_explore_moongate",
+    "name": "Reconhecer o Moongate",
+    "description": "Vá até o moongate de Haven (3763, 2769) e confirme se ainda está ativo.",
+    "category": "Side",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_guide_newhaven",
+    "giverName": "Marcus, o Guia",
+    "turnInId": "npc_guide_newhaven",
+    "turnInName": "Marcus, o Guia"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Explore",
+      "description": "Vá ao moongate de Haven (3763, 2769)",
+      "locationX": 3763,
+      "locationY": 2769,
+      "locationZ": 15,
+      "mapName": "Trammel",
+      "radiusTiles": 15,
+      "triggerOnEnter": true,
+      "stayDurationSeconds": 0,
+      "required": 1
+    }
+  ],
+  "rewards": {
+    "gold": 60,
+    "experience": 100
+  }
+}

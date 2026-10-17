@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "objetivo": "SkillGain",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "ARMADILHA_CORRIGIDA": "ReachValue so creditava em OnSkillGain. Quem JA tivesse Mining >= 30 (ou estivesse no cap) nunca gerava ganho e ficava travado em 0 para sempre. SyncSkillGainObjectives agora credita no aceite.",
+    "modos": "ReachValue = atingir o valor; GainAmount = ganhar N pontos."
+  },
+  "identity": {
+    "id": "exemplo_skillgain_mineracao",
+    "name": "Aprendiz de Minerador",
+    "description": "Garth só treina quem já sabe o básico: chegue a 30.0 em Mining.",
+    "category": "Profession",
+    "difficulty": "Normal"
+  },
+  "npcs": {
+    "giverId": "npc_minerador_garth",
+    "giverName": "Minerador Garth",
+    "turnInId": "npc_minerador_garth",
+    "turnInName": "Minerador Garth"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "SkillGain",
+      "description": "Alcance 30.0 em Mining",
+      "skill": "Mining",
+      "targetValue": 30.0,
+      "mode": "ReachValue",
+      "required": 1
+    }
+  ],
+  "rewards": {
+    "gold": 150,
+    "experience": 250,
+    "items": [
+      {
+        "type": "Pickaxe",
+        "name": "Picareta",
+        "amount": 1
+      }
+    ]
+  }
+}

@@ -407,8 +407,9 @@
           "locationHint": "Os lobos largam peles ao morrer. Traga como prova.",
           "fromMobTypes": [
             "GreyWolf",
-            "Lobo",
-            "Wolf"
+            "DireWolf",
+            "TimberWolf",
+            "Lobo"
           ],
           "dropChance": 100
         }

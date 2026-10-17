@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "objetivo": "Escort",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Destino declarado de DUAS formas de proposito: destinationRegion (nome real de regiao do Trammel) e coordenadas. IsAtDestination aceita qualquer uma das duas, entao sobrevive a regiao renomeada ou a coordenada imprecisa.",
+    "armadilha_evitada": "Escolta SEM destino era a falha classica: o NPC andava para sempre e a quest nunca completava. StartEscort agora aborta com aviso ao GM se nao houver destino resolvivel.",
+    "resgate": "teleportWhenStuck=true teletransporta o escoltado quando ele trava em geometria, em vez de deixar a quest parada."
+  },
+  "identity": {
+    "id": "exemplo_escort_fazenda",
+    "name": "Escolta até a Fazenda",
+    "description": "Leve o aprendiz de Dorik em segurança até a Fazenda de New Haven.",
+    "category": "Side",
+    "difficulty": "Easy"
+  },
+  "npcs": {
+    "giverId": "npc_ferreiro_dorik",
+    "giverName": "Ferreiro Dorik",
+    "turnInId": "npc_ferreiro_dorik",
+    "turnInName": "Ferreiro Dorik"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "timeLimit": {
+    "enabled": true,
+    "minutes": 30,
+    "onExpire": "Fail",
+    "warnings": [
+      10,
+      5
+    ]
+  },
+  "objectives": [
+    {
+      "type": "Escort",
+      "description": "Escolte o aprendiz até a Fazenda",
+      "escortNpcName": "Aprendiz de Dorik",
+      "spawnOnAccept": true,
+      "spawnX": 3503,
+      "spawnY": 2574,
+      "spawnZ": 14,
+      "spawnMap": "Trammel",
+      "destinationName": "Fazenda de New Haven",
+      "destinationRegion": "the New Haven Farm",
+      "destinationX": 3723,
+      "destinationY": 2622,
+      "destinationZ": 15,
+      "destinationMap": "Trammel",
+      "radiusToComplete": 12,
+      "teleportWhenStuck": true,
+      "maxDistanceFromOwner": 24,
+      "stuckTimeoutSeconds": 20,
+      "defendsItself": false,
+      "onEscortDead": "FailQuest",
+      "required": 1
+    }
+  ],
+  "rewards": {
+    "gold": 250,
+    "fame": 10,
+    "experience": 400
+  },
+  "dialogue": {
+    "onAccept": [
+      "Ele não conhece o caminho. Não o perca de vista."
+    ],
+    "onComplete": [
+      "Chegou inteiro. É o que importa."
+    ]
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "objetivo": "Deliver",
+    "nota": "Arquivo de exemplo: UMA quest, UM objetivo. Gerado para demonstrar o tipo de objetivo indicado no nome do arquivo. Rode [questreload e depois [questdiag para validar. Para desativar estes exemplos, mova a pasta Exemplos/ para fora de Data/Quests/.",
+    "detalhe": "Exemplo deliberado de giver DIFERENTE do turn-in (Brina entrega, Sera recebe, e voce volta a Brina). Era exatamente o caso que quebrava antes: a comparacao usava Serial.ToString() contra 'npc_*' e a quest nunca ficava entregavel.",
+    "giveItemOnAccept": "true faz o sistema criar e entregar o item no aceite, entao o jogador nao precisa compra-lo antes."
+  },
+  "identity": {
+    "id": "exemplo_deliver_pao",
+    "name": "Pão para a Enfermaria",
+    "description": "Leve 3 pães quentes da cozinha de Brina até a Enfermeira Sera e volte para receber.",
+    "category": "Side",
+    "difficulty": "Trivial"
+  },
+  "npcs": {
+    "giverId": "npc_cozinheira_brina",
+    "giverName": "Cozinheira Brina",
+    "turnInId": "npc_cozinheira_brina",
+    "turnInName": "Cozinheira Brina"
+  },
+  "settings": {
+    "repeatable": false,
+    "cooldownHours": 0,
+    "maxCompletions": 1
+  },
+  "objectives": [
+    {
+      "type": "Deliver",
+      "description": "Entregue 3 pães à Enfermeira Sera",
+      "itemType": "BreadLoaf",
+      "itemName": "Pão",
+      "required": 3,
+      "targetNpcId": "npc_enfermeira_sera",
+      "targetNpcName": "Enfermeira Sera",
+      "giveItemOnAccept": true,
+      "onItemLostAction": "Fail"
+    }
+  ],
+  "rewards": {
+    "gold": 90,
+    "karma": 50,
+    "experience": 120
+  },
+  "dialogue": {
+    "onAccept": [
+      "Ainda estão mornos. Vai logo, antes que esfriem."
+    ],
+    "onComplete": [
+      "Sera agradeceu? Bom. Volta sempre."
+    ]
+  }
+}

@@ -95,7 +95,27 @@ namespace Server.Custom.QuestSystem.Dialogue
             if (!string.IsNullOrEmpty(state?.SelectedQuestId))
             {
                 context["questId"] = state.SelectedQuestId;
-                context["questName"] = state.SelectedQuestId;
+
+                // Antes questName recebia o proprio ID, entao uma fala escrita
+                // como "Voce aceitou {questName}" renderizava
+                // "Voce aceitou quest_nh_comida" — o identificador interno
+                // vazando para o jogador em vez do titulo.
+                string questName = state.SelectedQuestId;
+
+                try
+                {
+                    var definition = Server.Custom.QuestSystem.Quests.QuestRepository
+                        .Instance.GetQuest(state.SelectedQuestId);
+
+                    if (definition != null && !string.IsNullOrWhiteSpace(definition.Name))
+                        questName = definition.Name;
+                }
+                catch
+                {
+                    // repositório ainda não carregado: mantém o ID como fallback
+                }
+
+                context["questName"] = questName;
             }
 
             ExecuteLines(npc, player, node.Lines, context, onComplete);
