@@ -36,12 +36,34 @@ namespace Server.Custom.QuestSystem.Quests
         public int Required { get; set; }
 
         /// <summary>
-        /// Progresso atual (usado no PlayerQuestData)
+        /// NÃO USE para progresso de jogador.
+        ///
+        /// Uma QuestDefinition é ÚNICA e compartilhada: o QuestRepository guarda
+        /// uma só instância por questId e todos os jogadores a consultam. Se
+        /// alguém escrever aqui, o progresso de um jogador vaza para todos os
+        /// outros do shard.
+        ///
+        /// O progresso real vive em ObjectiveProgress, dentro de
+        /// ActiveQuest.Progress (por jogador, serializado em PlayerQuestData).
+        /// É esse que QuestManager.UpdateProgress e ActiveQuest.UpdateProgress
+        /// movimentam.
+        ///
+        /// Este campo ficou como resíduo do desenho original: nada no sistema o
+        /// escreve ou lê para progresso. Mantido apenas para não quebrar
+        /// serialização/Clone de terceiros. O comentário antigo dizia "usado no
+        /// PlayerQuestData", o que era enganoso — PlayerQuestData usa
+        /// ObjectiveProgress, nunca este campo.
+        ///
+        /// (Sem [Obsolete] de propósito: Current/IsComplete são referenciados por
+        /// AddProgress, Reset e pelos Clone() das subclasses, então o atributo
+        /// geraria dezenas de CS0618 a cada inicialização do shard.)
         /// </summary>
         public int Current { get; set; }
 
         /// <summary>
-        /// Objetivo completo
+        /// Derivado de <see cref="Current"/> — herda o mesmo aviso: não reflete o
+        /// progresso de nenhum jogador. Consulte
+        /// <c>ActiveQuest.Progress[i].IsComplete</c>.
         /// </summary>
         public bool IsComplete => Current >= Required;
 
@@ -99,7 +121,12 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Incrementa progresso
+        /// NÃO USE em objetivo de definição compartilhada — ver o aviso em
+        /// <see cref="Current"/>. Escrever aqui mistura o progresso de todos os
+        /// jogadores do shard.
+        ///
+        /// O caminho correto é QuestManager.UpdateProgress(player, questId,
+        /// objectiveIndex, amount), que mexe em ActiveQuest.Progress[i].
         /// </summary>
         public virtual bool AddProgress(int amount = 1)
         {
@@ -110,7 +137,8 @@ namespace Server.Custom.QuestSystem.Quests
         }
 
         /// <summary>
-        /// Reseta progresso
+        /// Mesmo aviso de <see cref="AddProgress"/>: opera sobre estado
+        /// compartilhado, não sobre o progresso de um jogador.
         /// </summary>
         public virtual void Reset()
         {
@@ -717,7 +745,21 @@ namespace Server.Custom.QuestSystem.Quests
         public string MapName { get; set; }
         public int RadiusTiles { get; set; }
         public int TotalWaves { get; set; }
+
+        /// <summary>
+        /// NÃO USE para contar ondas em jogo.
+        ///
+        /// Esta definição é compartilhada por todos os jogadores, então um
+        /// contador aqui faria a segunda pessoa a defender o local começar da
+        /// onda em que a primeira parou.
+        ///
+        /// A contagem real vive em DefendRun._wavesSpawned
+        /// (Managers/QuestObjectiveDrivers.cs), que é estado por execução, criado
+        /// no aceite e descartado no fim. Este campo nunca é lido nem escrito
+        /// pelo sistema — só zerado no construtor e no Clone().
+        /// </summary>
         public int CurrentWave { get; set; }
+
         public string EnemyType { get; set; }
         public int EnemiesPerWave { get; set; }
         public int TimeBetweenWavesSeconds { get; set; }
