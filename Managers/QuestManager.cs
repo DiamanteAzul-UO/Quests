@@ -624,6 +624,21 @@ namespace Server.Custom.QuestSystem.Quests
             if (data == null)
                 return "";
 
+            // PlayerQuestData.GetStatusTag deriva o status sozinho, pelo caminho
+            // que NÃO consulta pré-requisitos — ele não tem acesso ao player.
+            // Isso deixaria uma quest bloqueada renderizando igual a uma
+            // disponível para qualquer script do shard que use esta API pública.
+            //
+            // Aqui o status vem de GetQuestStatus(player, questId), que é
+            // prerequisite-aware e devolve Locked quando Check() falha.
+            var status = GetQuestStatus(player, questId);
+
+            if (status == QuestStatus.Locked)
+                return "[BLOQUEADA]";
+
+            if (status == QuestStatus.Failed)
+                return "[FALHOU]";
+
             return data.GetStatusTag(questId);
         }
 
